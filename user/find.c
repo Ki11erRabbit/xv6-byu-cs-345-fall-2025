@@ -63,7 +63,7 @@ int explore_directory(char *path, int current_path_len, char *needle) {
                 if (de.inum == 0 || strcmp(de.name, ".") == 0 || strcmp(de.name, "..") == 0) {
                     continue;
                 }
-                int new_len = add_path(path, current_path_len, de.name);
+                int new_len = add_path(path, with_slash, de.name);
                 int result = explore_directory(path, new_len, needle);
                 if (result < 0)
                     return result;
@@ -89,8 +89,7 @@ int main(int argc, char *argv[]) {
     char path[512] = { 0 };
 
     memmove(path, argv[1], strlen(argv[1]));
-    path[strlen(argv[1])] = '/';
-    int result = explore_directory(path, strlen(argv[1]) + 1, argv[2]);
+    int result = explore_directory(path, strlen(path), argv[2]);
 
 
     exit(result);
