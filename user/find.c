@@ -82,7 +82,7 @@ int explore_directory(char *path, int current_path_len, char *needle) {
 int main(int argc, char *argv[]) {
 
     if (argc <= 2) {
-        printf("Usage: find <path>\n");
+        printf("Usage: find <path> <needle>\n");
         exit(1);
     }
 
