@@ -7,7 +7,7 @@
 #include "kernel/fs.h"
 #include "kernel/fcntl.h"
 
-void lines(char *input, int input_length, char **output, int *output_length) {
+void lines(char *input, int input_length, char ***output, int *output_length) {
     int offset = 0;
     int offset_length = 0;
     char *buffer[512] = {0};
@@ -24,10 +24,11 @@ void lines(char *input, int input_length, char **output, int *output_length) {
         }
         offset_length++;
     } while (offset + offset_length < input_length);
-
     *output = malloc(sizeof(char*) * buffer_length);
     *output_length = buffer_length;
-    memcpy(output, buffer, buffer_length * sizeof(char*));
+    for (int i = 0; i < buffer_length; i++) {
+        (*output)[i] = buffer[i];
+    }
     return;
 }
 
@@ -41,7 +42,7 @@ int main(int argc, char *argv[]){
 
     char input[1024] = {0};
     read(0, input, 1024);
-    char *args = {0};
+    char **args;
     int args_length = 0;
 
     lines(input, strlen(input), &args, &args_length);
@@ -49,11 +50,12 @@ int main(int argc, char *argv[]){
     char **all_args = malloc(sizeof(char*) * all_args_length);
     all_args[all_args_length] = (char *)0;
 
-    memcpy(all_args, argv + 1, (argc - 1) * sizeof(char*));
-    memcpy(all_args + (argc - 1), args, args_length * sizeof(char*));
+    for (int i = 1; i < argc; i++) {
+        all_args[i - 1] = argv[i];
+    }
 
-    for (int i = 0; i < all_args_length; i++) {
-        printf("%s\n", all_args[i]);
+    for (int i = 0; i < args_length; i++) {
+        all_args[argc + i - 1] = args[i];
     }
 
     exec(argv[1], all_args);
