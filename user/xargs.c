@@ -12,7 +12,7 @@ void lines(char *input, int input_length, char ***output, int *output_length) {
     int offset_length = 0;
     char *buffer[512] = {0};
     int buffer_length = 0;
-    do {
+    while (offset + offset_length < input_length) {
         if (input[offset + offset_length] == '\n' || offset + offset_length == input_length) {
             buffer[buffer_length] = malloc(sizeof(char) * (offset_length + 1));
             memcpy(buffer[buffer_length], input + offset, offset_length * sizeof(char));
@@ -23,7 +23,14 @@ void lines(char *input, int input_length, char ***output, int *output_length) {
             offset_length = 1;
         }
         offset_length++;
-    } while (offset + offset_length < input_length);
+    }
+
+    buffer[buffer_length] = malloc(sizeof(char) * strlen(input + offset));
+    memcpy(buffer[buffer_length], input + offset, strlen(input + offset));
+    buffer[buffer_length][strlen(input + offset)] = '\0';
+    buffer_length++;
+
+
     *output = malloc(sizeof(char*) * buffer_length);
     *output_length = buffer_length;
     for (int i = 0; i < buffer_length; i++) {
