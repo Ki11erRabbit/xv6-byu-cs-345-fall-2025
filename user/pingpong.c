@@ -12,13 +12,13 @@ int main(int argc, char *argv[]) {
     if (fork() == 0) {
         char byte = 0;
         read(the_pipe[1], &byte, 1);
-        printf("%d: received ping\n", getpid());
+        fprintf(2, "%d: received ping\n", getpid());
         write(the_pipe[0], &byte, 1);
     } else {
         char byte = 1;
         write(the_pipe[0], &byte, 1);
         read(the_pipe[1], &byte, 1);
-        printf("%d: received pong\n", getpid());
+        fprintf(2, "%d: received pong\n", getpid());
     }
     exit(0);
 }
