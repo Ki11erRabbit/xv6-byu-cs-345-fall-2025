@@ -8,10 +8,13 @@
 #include "kernel/fcntl.h"
 
 int add_path(char *path, int current_path_len, char *add) {
+    //printf("base: %s\n", path);
+    //printf(" add: %s\n", add);
     int add_len = strlen(add);
     memmove(path + current_path_len, add, add_len);
 
     path[current_path_len + add_len] = '\0';
+    //printf("path: %s\n", path);
     return current_path_len + add_len;
 }
 
@@ -51,8 +54,7 @@ int explore_directory(char *path, int current_path_len, char *needle) {
     switch (st.type) {
         case T_FILE:
             int offset = last_segment_start(path, current_path_len);
-            if (strcmp(path + offset, needle) == 0) {
-                add_path(path, current_path_len, de.name);
+            if (strcmp(path + offset, needle) == 0 && strlen(path + offset) == strlen(needle)) {
                 printf("%s\n", path);
                 remove_path(path, current_path_len);
             }
