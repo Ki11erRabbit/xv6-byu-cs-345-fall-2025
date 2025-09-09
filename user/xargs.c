@@ -16,6 +16,7 @@ void lines(char *input, int input_length, char **output, int *output_length) {
         if (input[offset + offset_length] == '\n' || offset + offset_length == input_length) {
             buffer[buffer_length] = malloc(sizeof(char) * (offset_length + 1));
             memcpy(buffer[buffer_length], input + offset, offset_length * sizeof(char));
+            buffer[buffer_length][offset_length] = '\0';
             buffer[buffer_length][offset + offset_length] = '\0';
             buffer_length++;
             offset = offset + offset_length + 1;
@@ -50,6 +51,11 @@ int main(int argc, char *argv[]){
 
     memcpy(all_args, argv + 1, (argc - 1) * sizeof(char*));
     memcpy(all_args + (argc - 1), args, args_length * sizeof(char*));
+
+    for (int i = 0; i < all_args_length; i++) {
+        printf("%s\n", all_args[i]);
+    }
+
     exec(argv[1], all_args);
     exit(0);
 }
