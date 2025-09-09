@@ -17,7 +17,6 @@ void lines(char *input, int input_length, char ***output, int *output_length) {
             buffer[buffer_length] = malloc(sizeof(char) * (offset_length + 1));
             memcpy(buffer[buffer_length], input + offset, offset_length * sizeof(char));
             buffer[buffer_length][offset_length] = '\0';
-            buffer[buffer_length][offset + offset_length] = '\0';
             buffer_length++;
             offset = offset + offset_length + 1;
             offset_length = 1;
@@ -53,7 +52,7 @@ int main(int argc, char *argv[]){
     int args_length = 0;
 
     lines(input, strlen(input), &args, &args_length);
-    int all_args_length = args_length + (argc);
+    int all_args_length = argc + 1;
     char **all_args = malloc(sizeof(char*) * all_args_length);
     all_args[all_args_length] = (char *)0;
 
@@ -62,9 +61,16 @@ int main(int argc, char *argv[]){
     }
 
     for (int i = 0; i < args_length; i++) {
-        all_args[argc + i - 1] = args[i];
+        //printf("%s\n", args[i]);
+        all_args[argc - 1] = args[i];
+        if (fork() == 0) {
+            int pid = 0;
+            wait(&pid);
+        } else {
+            exec(argv[1], all_args);
+        }
     }
 
-    exec(argv[1], all_args);
+
     exit(0);
 }
