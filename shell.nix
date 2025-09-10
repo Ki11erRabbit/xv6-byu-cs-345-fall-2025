@@ -1,21 +1,14 @@
 { pkgs ? import <nixpkgs> {} }:
-with import <nixpkgs> {
-    crossSystem = {
-        config = "riscv64-none-elf";
-    };
-};
 
 pkgs.mkShell {
-  buildInputs = with pkgs; [
-    gcc
-    gdb
-    binutils
+  buildInputs = [
+    pkgs.pkgsCross.riscv64-embedded.buildPackages.gcc
+    pkgs.pkgsCross.riscv64-embedded.buildPackages.binutils
+    pkgs.qemu
   ];
 
-    nativeBuildInputs = with pkgs; [
-        qemu
-    ];
-  
-    shellHook = ''
-    '';
+  shellHook = ''
+    echo "RISC-V xv6 development environment loaded."
+    echo "Available toolchain: riscv64-unknown-elf-gcc, ld, objcopy, etc."
+  '';
 }
