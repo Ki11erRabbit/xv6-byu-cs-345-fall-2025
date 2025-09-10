@@ -47,7 +47,14 @@ int main(int argc, char *argv[]){
     }
 
     char input[1024] = {0};
-    read(0, input, 1024);
+    int total_read = 0;
+    while (total_read < 1024) {
+        int result = read(0, input + total_read, 1024 - total_read);
+        if (result <= 0) {
+            break;
+        }
+        total_read += result;
+    }
     char **args;
     int args_length = 0;
 
