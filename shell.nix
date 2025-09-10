@@ -8,7 +8,7 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    echo "RISC-V xv6 development environment loaded."
-    echo "Available toolchain: riscv64-unknown-elf-gcc, ld, objcopy, etc."
+    export PATH=${pkgs.pkgsCross.riscv64-embedded.buildPackages.gcc}/bin${pkgs.pkgsCross.riscv64-embedded.buildPackages.binutils}/bin:$PATH
+    export TOOLPREFIX=riscv64-none-elf-
   '';
 }
