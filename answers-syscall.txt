@@ -1,0 +1,6 @@
+1. The function that called syscall was usertrap.
+2. The value of p->trapframe->a7 is 0x7. It represents the exec system call number.
+3. The previous mode was user mode. You can tell because the 8th bit in $sstatus is not set. This was using riscv.h.
+4. The instruction that is faulting is `lw a3, 0(zero)`. The register that holds int num is register a3.
+5. Address 0 is not mapped in the kernel in either physical or virtual memory.
+6. The process running is called "initcode". Its pid is 1.

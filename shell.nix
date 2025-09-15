@@ -9,7 +9,7 @@ pkgs.mkShell {
   ];
 
   shellHook = ''
-    export PATH=${pkgs.pkgsCross.riscv64-embedded.buildPackages.gcc}/bin${pkgs.pkgsCross.riscv64-embedded.buildPackages.binutils}/bin:$PATH
+    export PATH=${pkgs.pkgsCross.riscv64-embedded.buildPackages.gcc}/bin:${pkgs.pkgsCross.riscv64-embedded.buildPackages.binutils}/bin:${pkgs.pkgsCross.riscv64-embedded.buildPackages.gdb}/bin:$PATH
     export TOOLPREFIX=riscv64-none-elf-
   '';
 }
