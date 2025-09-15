@@ -54,7 +54,8 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
-      p->kstack = KSTACK((int) (p - proc));
+      p->kstack = KSTACK((int)(p - proc));
+      p->sys_mask = 0;
   }
 }
 
@@ -321,6 +322,8 @@ fork(void)
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
+
+  np->sys_mask = p->sys_mask;
 
   return pid;
 }
