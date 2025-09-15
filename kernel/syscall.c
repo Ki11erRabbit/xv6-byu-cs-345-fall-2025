@@ -89,11 +89,11 @@ void trace_syscall(int syscall_num, struct proc *p, int return_value) {
     syscall_name = "trace";
     break;
   default:
-    printf("unknown systemcall %d\n", syscall_num);
+    printf("unknown system call %d\n", syscall_num);
     return;
     break;
   }    
-  printf("syscall %s -> %d\n", syscall_name, return_value);
+  printf("%d: syscall %s -> %d\n", p->pid, syscall_name, return_value);
 }  
 
 
