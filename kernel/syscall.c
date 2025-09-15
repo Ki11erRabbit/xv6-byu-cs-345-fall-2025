@@ -7,6 +7,96 @@
 #include "syscall.h"
 #include "defs.h"
 
+// sets the nth bit for a systemcall
+#define SYSCALL_BIT(syscall) (1L << syscall)
+
+// reports the current systemcall about to be executed by process p
+// it also reports the return value of that systemcall
+void trace_syscall(int syscall_num, struct proc *p, int return_value) {
+  if (p->sys_mask == 0) {
+    return;
+  }
+  int syscall_bit = SYSCALL_BIT(syscall_num);
+  if ((syscall_bit & p->sys_mask) != syscall_bit) {
+    return;
+  }
+  char *syscall_name = (char*)0;
+  switch (syscall_num) {
+  case SYS_fork:
+    syscall_name = "fork";
+    break;
+  case SYS_exit:
+    syscall_name = "exit";
+    break;
+  case SYS_wait:
+    syscall_name = "wait";
+    break;
+  case SYS_pipe:
+    syscall_name = "pipe";
+    break;
+  case SYS_read:
+    syscall_name = "read";
+    break;
+  case SYS_kill:
+    syscall_name = "kill";
+    break;
+  case SYS_exec:
+    syscall_name = "exec";
+    break;
+  case SYS_fstat:
+    syscall_name = "fstat";
+    break;
+  case SYS_chdir:
+    syscall_name = "chdir";
+    break;
+  case SYS_dup:
+    syscall_name = "dup";
+    break;
+  case SYS_getpid:
+    syscall_name = "getpid";
+    break;
+  case SYS_sbrk:
+    syscall_name = "sbrk";
+    break;
+  case SYS_sleep:
+    syscall_name = "sleep";
+    break;
+  case SYS_uptime:
+    syscall_name = "uptime";
+    break;
+  case SYS_open:
+    syscall_name = "open";
+    break;
+  case SYS_write:
+    syscall_name = "write";
+    break;
+  case SYS_mknod:
+    syscall_name = "mknod";
+    break;
+  case SYS_unlink:
+    syscall_name = "unlink";
+    break;
+  case SYS_link:
+    syscall_name = "link";
+    break;
+  case SYS_mkdir:
+    syscall_name = "mkdir";
+    break;
+  case SYS_close:
+    syscall_name = "close";
+    break;
+  case SYS_trace:
+    syscall_name = "trace";
+    break;
+  default:
+    printf("unknown systemcall %d", syscall_num);
+    return;
+    break;
+  }    
+  printf("syscall %s -> %d", syscall_name, return_value);
+}  
+
+
 // Fetch the uint64 at addr from the current process.
 int
 fetchaddr(uint64 addr, uint64 *ip)
@@ -101,6 +191,7 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_trace(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -126,6 +217,7 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_trace]   sys_trace,
 };
 
 void
@@ -140,6 +232,7 @@ syscall(void)
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
+    trace_syscall(num, p, p->trapframe->a0);
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

@@ -16,6 +16,7 @@
 #include "file.h"
 #include "fcntl.h"
 
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -503,3 +504,12 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64 sys_trace(void) {
+  int mask;
+  argint(1, &mask);
+  struct proc *p = myproc();
+  p->sys_mask = mask;
+  return 0;
+}  
+    
