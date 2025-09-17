@@ -5,7 +5,7 @@
 
 
 void print_secret(int fd, char *secret) {
-  write(fd, secret, 40);
+  write(fd, secret, 8);
 }  
 
 int
@@ -18,10 +18,11 @@ main(int argc, char *argv[])
   heap = heap + 9 * PGSIZE;
   // heap += 32;
   int i = 0;
-  while (!(heap[i - 1] == 'm' && heap[i] == 'y')) {
+  while (!(heap[i - 1] == 'p' && heap[i] == 'w')) {
     i++;
   }
-  print_secret(1, heap + i - 2);
-  print_secret(2, heap + i - 2);
+
+  //print_secret(1, heap + i + 6);
+  print_secret(2, heap + i + 6);
   exit(1);
 }
