@@ -176,3 +176,15 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+
+void backtrace(void) {
+  uint64 fp = r_fp();
+  uint64 current_page = PGROUNDDOWN(fp);
+  while (PGROUNDDOWN(fp) == current_page) {
+    uint64 ret_addr = *((uint64 *)(fp - 8));
+    printf("%p\n", (void *)ret_addr);
+    fp -= 16;
+    fp = *((uint64 *)fp);
+  };   
+}  

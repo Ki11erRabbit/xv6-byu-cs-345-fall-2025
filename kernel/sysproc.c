@@ -55,6 +55,7 @@ sys_sleep(void)
   uint ticks0;
 
   argint(0, &n);
+  backtrace();
   if(n < 0)
     n = 0;
   acquire(&tickslock);
