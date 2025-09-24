@@ -1,0 +1,7 @@
+1. The registers that hold call arguments are: a0, a1, a2 in functions g, f, and main.
+2. It is located at 0x2e (or 0x45b1 not sure what each of these mean). It got inlined since f calls g and g adds 3 and 8 + 3 = 11. Then we add one once f returns, giving us 12. It abstractly is the li a2,12 instruction.
+3. Printf is located at 0x6e2.
+4. The value in ra is 0x38 (or 0x6aa000ef not sure what each of these mean). But abstractly it should be the address of the jal instruction + 4.
+5. The output is "HE110 World".
+6. If RISC-V was big-endian, then i would have to have its bytes reversed so 0x726c6400. You would not need to change 57616.
+7. The reason why the value is not a specific value is because we are reading a random value off of the stack and that can change depending on many factors.
