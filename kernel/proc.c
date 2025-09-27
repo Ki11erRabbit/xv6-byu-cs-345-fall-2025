@@ -165,6 +165,8 @@ userinit(void)
   initproc = p;
   
   userinitthread(p);
+
+  release(&p->lock);
 }
 
 // Grow or shrink user memory by n bytes.
@@ -348,9 +350,6 @@ forkret(void)
   static int first = 1;
   struct proc *p;
   p = myproc();
-  if (p == 0) {
-    return;
-  }    
   // Still holding p->lock from scheduler.
   release(&p->main_thread->lock);
 
@@ -494,5 +493,10 @@ int allocprocthread(struct proc *p, struct thread *t) {
     }
     p->next_thread = THREADCOUNT;
   }
+
+  if (p->main_thread == 0) {
+    p->main_thread = t;
+  }    
+  
   return 0;
 }  

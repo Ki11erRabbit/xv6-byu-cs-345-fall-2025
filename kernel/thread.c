@@ -96,14 +96,14 @@ myproc(void)
 int
 alloctid()
 {
-  int pid;
+  int tid;
   
   acquire(&tid_lock);
-  pid = nexttid;
+  tid = nexttid;
   nexttid = nexttid + 1;
   release(&tid_lock);
 
-  return pid;
+  return tid;
 }
 
 // Look in the thread table for an UNUSED thread.
@@ -193,7 +193,7 @@ void
 userinitthread(struct proc *p)
 {
 
-  struct thread *t = allocthread(p);
+  struct thread *t = p->main_thread;
   // allocate one user page and copy initcode's instructions
   // and data into it.
   uvmfirst(p->pagetable, initcode, sizeof(initcode));
@@ -209,8 +209,6 @@ userinitthread(struct proc *p)
   p->state = RUNNABLE;
   t->state = T_RUNNABLE;
   safestrcpy(t->name, "main", sizeof(t->name));
-
-  release(&p->lock);
 }
 
 // Create a new thread, copying the parent.
