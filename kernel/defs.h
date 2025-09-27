@@ -81,9 +81,27 @@ int            printf(char*, ...) __attribute__ ((format (printf, 1, 2)));
 void            panic(char*) __attribute__((noreturn));
 void            printfinit(void);
 
-// proc.c
+// thread.c
 int             cpuid(void);
-void            exit(int);
+void exit(int);
+void fork_thread(struct proc*);
+int             kill_thread(struct thread*);
+struct cpu*     mycpu(void);
+struct cpu*     getmycpu(void);
+struct proc*    myproc();
+struct thread*    mypthread();
+void            threadinit(void);
+void            scheduler(void) __attribute__((noreturn));
+void            sched(void);
+void            sleep(void*, struct spinlock*);
+void            userinitthread(struct proc*);
+void            wakeup(void*);
+void            yield(void);
+void            threaddump(struct thread*);
+int killed_thread(struct thread *);
+
+
+// proc.c
 int             fork(void);
 int             growproc(int);
 void            proc_mapstacks(pagetable_t);
@@ -92,17 +110,8 @@ void            proc_freepagetable(pagetable_t, uint64);
 int             kill(int);
 int             killed(struct proc*);
 void            setkilled(struct proc*);
-struct cpu*     mycpu(void);
-struct cpu*     getmycpu(void);
-struct proc*    myproc();
-void            procinit(void);
-void            scheduler(void) __attribute__((noreturn));
-void            sched(void);
-void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(uint64);
-void            wakeup(void*);
-void            yield(void);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);

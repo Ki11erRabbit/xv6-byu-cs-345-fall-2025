@@ -6,8 +6,6 @@
 #include "proc.h"
 #include "defs.h"
 
-struct cpu cpus[NCPU];
-
 struct proc proc[NPROC];
 
 struct proc *initproc;
@@ -41,52 +39,6 @@ proc_mapstacks(pagetable_t kpgtbl)
     uint64 va = KSTACK((int) (p - proc));
     kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
   }
-}
-
-// initialize the proc table.
-void
-procinit(void)
-{
-  struct proc *p;
-  
-  initlock(&pid_lock, "nextpid");
-  initlock(&wait_lock, "wait_lock");
-  for(p = proc; p < &proc[NPROC]; p++) {
-      initlock(&p->lock, "proc");
-      p->state = UNUSED;
-      p->kstack = KSTACK((int) (p - proc));
-  }
-}
-
-// Must be called with interrupts disabled,
-// to prevent race with process being moved
-// to a different CPU.
-int
-cpuid()
-{
-  int id = r_tp();
-  return id;
-}
-
-// Return this CPU's cpu struct.
-// Interrupts must be disabled.
-struct cpu*
-mycpu(void)
-{
-  int id = cpuid();
-  struct cpu *c = &cpus[id];
-  return c;
-}
-
-// Return the current struct proc *, or zero if none.
-struct proc*
-myproc(void)
-{
-  push_off();
-  struct cpu *c = mycpu();
-  struct proc *p = c->proc;
-  pop_off();
-  return p;
 }
 
 int
@@ -125,13 +77,6 @@ found:
   p->pid = allocpid();
   p->state = USED;
 
-  // Allocate a trapframe page.
-  if((p->trapframe = (struct trapframe *)kalloc()) == 0){
-    freeproc(p);
-    release(&p->lock);
-    return 0;
-  }
-
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -140,11 +85,13 @@ found:
     return 0;
   }
 
-  // Set up new context to start executing at forkret,
-  // which returns to user space.
-  memset(&p->context, 0, sizeof(p->context));
-  p->context.ra = (uint64)forkret;
-  p->context.sp = p->kstack + PGSIZE;
+  struct thread *t = allocthread(p);
+  if (t == (struct thread *)0) {
+    panic("out of threads");
+  }
+  p->main_thread = t;
+  safestrcpy(t->name, "main", sizeof(t->name));
+  
 
   return p;
 }
@@ -169,6 +116,13 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  for (int i = 0; i < THREADCOUNT; i++) {
+    acquire(p->threads[i]->lock);
+    freethread(&p->threads[i]);
+    p->threads[i] = 0;
+    release(p->threads[i]->lock);
+  }
+  p->main_thread = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -242,14 +196,7 @@ userinit(void)
   uvmfirst(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
 
-  // prepare for the very first "return" from kernel to user.
-  p->trapframe->epc = 0;      // user program counter
-  p->trapframe->sp = PGSIZE;  // user stack pointer
-
-  safestrcpy(p->name, "initcode", sizeof(p->name));
-  p->cwd = namei("/");
-
-  p->state = RUNNABLE;
+  userinitthread(p);
 
   release(&p->lock);
 }
@@ -296,11 +243,7 @@ fork(void)
   }
   np->sz = p->sz;
 
-  // copy saved user registers.
-  *(np->trapframe) = *(p->trapframe);
-
-  // Cause fork to return 0 in the child.
-  np->trapframe->a0 = 0;
+  fork_thread(np);
 
   // increment reference counts on open file descriptors.
   for(i = 0; i < NOFILE; i++)
@@ -344,10 +287,8 @@ reparent(struct proc *p)
 // An exited process remains in the zombie state
 // until its parent calls wait().
 void
-exit(int status)
+exit_proc(struct proc *p, int status)
 {
-  struct proc *p = myproc();
-
   if(p == initproc)
     panic("init exiting");
 
@@ -379,10 +320,6 @@ exit(int status)
   p->state = ZOMBIE;
 
   release(&wait_lock);
-
-  // Jump into the scheduler, never to return.
-  sched();
-  panic("zombie exit");
 }
 
 // Wait for a child process to exit and return its pid.
@@ -434,89 +371,8 @@ wait(uint64 addr)
   }
 }
 
-// Per-CPU process scheduler.
-// Each CPU calls scheduler() after setting itself up.
-// Scheduler never returns.  It loops, doing:
-//  - choose a process to run.
-//  - swtch to start running that process.
-//  - eventually that process transfers control
-//    via swtch back to the scheduler.
-void
-scheduler(void)
-{
-  struct proc *p;
-  struct cpu *c = mycpu();
 
-  c->proc = 0;
-  for(;;){
-    // The most recent process to run may have had interrupts
-    // turned off; enable them to avoid a deadlock if all
-    // processes are waiting.
-    intr_on();
 
-    int found = 0;
-    for(p = proc; p < &proc[NPROC]; p++) {
-      acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
-      }
-      release(&p->lock);
-    }
-    if(found == 0) {
-      // nothing to run; stop running on this core until an interrupt.
-      intr_on();
-      asm volatile("wfi");
-    }
-  }
-}
-
-// Switch to scheduler.  Must hold only p->lock
-// and have changed proc->state. Saves and restores
-// intena because intena is a property of this
-// kernel thread, not this CPU. It should
-// be proc->intena and proc->noff, but that would
-// break in the few places where a lock is held but
-// there's no process.
-void
-sched(void)
-{
-  int intena;
-  struct proc *p = myproc();
-
-  if(!holding(&p->lock))
-    panic("sched p->lock");
-  if(mycpu()->noff != 1)
-    panic("sched locks");
-  if(p->state == RUNNING)
-    panic("sched running");
-  if(intr_get())
-    panic("sched interruptible");
-
-  intena = mycpu()->intena;
-  swtch(&p->context, &mycpu()->context);
-  mycpu()->intena = intena;
-}
-
-// Give up the CPU for one scheduling round.
-void
-yield(void)
-{
-  struct proc *p = myproc();
-  acquire(&p->lock);
-  p->state = RUNNABLE;
-  sched();
-  release(&p->lock);
-}
 
 // A fork child's very first scheduling by scheduler()
 // will swtch to forkret.
@@ -542,54 +398,7 @@ forkret(void)
   usertrapret();
 }
 
-// Atomically release lock and sleep on chan.
-// Reacquires lock when awakened.
-void
-sleep(void *chan, struct spinlock *lk)
-{
-  struct proc *p = myproc();
-  
-  // Must acquire p->lock in order to
-  // change p->state and then call sched.
-  // Once we hold p->lock, we can be
-  // guaranteed that we won't miss any wakeup
-  // (wakeup locks p->lock),
-  // so it's okay to release lk.
 
-  acquire(&p->lock);  //DOC: sleeplock1
-  release(lk);
-
-  // Go to sleep.
-  p->chan = chan;
-  p->state = SLEEPING;
-
-  sched();
-
-  // Tidy up.
-  p->chan = 0;
-
-  // Reacquire original lock.
-  release(&p->lock);
-  acquire(lk);
-}
-
-// Wake up all processes sleeping on chan.
-// Must be called without any p->lock.
-void
-wakeup(void *chan)
-{
-  struct proc *p;
-
-  for(p = proc; p < &proc[NPROC]; p++) {
-    if(p != myproc()){
-      acquire(&p->lock);
-      if(p->state == SLEEPING && p->chan == chan) {
-        p->state = RUNNABLE;
-      }
-      release(&p->lock);
-    }
-  }
-}
 
 // Kill the process with the given pid.
 // The victim won't exit until it tries to return
@@ -608,6 +417,9 @@ kill(int pid)
         p->state = RUNNABLE;
       }
       release(&p->lock);
+      for (int i = 0; i < THREADCOUNT; i++) {
+        kill_thread(p->threads[i]);
+      }        
       return 0;
     }
     release(&p->lock);
@@ -691,5 +503,26 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+    for (int i = 0; i < THREADCOUNT; i++) {
+      threaddump(p->threads[i]);
+    }      
   }
 }
+
+
+// To get here, we require that p->lock to already be held
+int allocprocthread(struct proc *p, struct thread *t) {
+  if (p->next_thread == THREADCOUNT) {
+    return 1;
+  }
+  p->threads[p->next_thread] = t;
+
+  for (int i = 0; i < THREADCOUNT; i++) {
+    if (p->threads[i] == (struct thread *)0) {
+      p->next_thread = i;
+      break;
+    }
+    p->next_thread = THREADCOUNT;
+  }
+  return 0;
+}  

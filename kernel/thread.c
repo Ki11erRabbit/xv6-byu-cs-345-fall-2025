@@ -1,0 +1,426 @@
+#include "types.h"
+#include "param.h"
+#include "memlayout.h"
+#include "riscv.h"
+#include "spinlock.h"
+#include "proc.h"
+#include "thread.h"
+#include "defs.h"
+
+struct cpu cpus[NCPU];
+struct thread thread[NTHREAD];
+
+int nexttid = 1;
+struct spinlock tid_lock;
+
+// Allocate a page for each threads's kernel stack.
+// Map it high in memory, followed by an invalid
+// guard page.
+void
+proc_mapstacks(pagetable_t kpgtbl)
+{
+  struct thread *t;
+  
+  for(t = thread; t < &thread[NTHREAD]; t++) {
+    char *ta = kalloc();
+    if(ta == 0)
+      panic("kalloc");
+    uint64 va = KSTACK((int) (t - thread));
+    kvmmap(kpgtbl, va, (uint64)ta, PGSIZE, PTE_R | PTE_W);
+  }
+}
+
+// initialize the thread table.
+void
+threadinit(void)
+{
+  struct thread *t;
+  
+  initlock(&tid_lock, "nextpid");
+  for(t = thread; t < &thread[NTHREAD]; t++) {
+      initlock(&t->lock, "proc");
+      t->state = UNUSED;
+      t->kstack = KSTACK((int) (t - thread));
+  }
+}
+
+// Must be called with interrupts disabled,
+// to prevent race with process being moved
+// to a different CPU.
+int
+cpuid()
+{
+  int id = r_tp();
+  return id;
+}
+
+// Return this CPU's cpu struct.
+// Interrupts must be disabled.
+struct cpu*
+mycpu(void)
+{
+  int id = cpuid();
+  struct cpu *c = &cpus[id];
+  return c;
+}
+
+// Return the current struct thread *, or zero if none.
+struct thread*
+mythread(void)
+{
+  push_off();
+  struct cpu *c = mycpu();
+  struct thread *t = c->thread;
+  pop_off();
+  return t;
+}
+
+// Return the current struct proc *, or zero if none.
+struct proc*
+myproc(void)
+{
+  push_off();
+  struct cpu *c = mycpu();
+  struct proc *p = c->proc;
+  pop_off();
+  return p;
+}
+
+int
+alloctid()
+{
+  int pid;
+  
+  acquire(&tid_lock);
+  pid = nexttid;
+  nexttid = nexttid + 1;
+  release(&tid_lock);
+
+  return pid;
+}
+
+// Look in the thread table for an UNUSED thread.
+// If found, initialize state required to run in the kernel,
+// and return with t->lock held.
+// If there are no free threads, or a memory allocation fails, return 0.
+static struct thread*
+allocthread(struct proc* p)
+{
+  struct thread *t;
+
+  for(t = thread; t < &thread[NTHREAD]; t++) {
+    acquire(&t->lock);
+    if(t->state == UNUSED) {
+      goto found;
+    } else {
+      release(&t->lock);
+    }
+  }
+  return 0;
+
+found:
+  t->tid = alloctid();
+  t->state = USED;
+
+  // Allocate a trapframe page.
+  if((t->trapframe = (struct trapframe *)kalloc()) == 0){
+    freethread(t);
+    release(&t->lock);
+    return 0;
+  }
+
+  // An empty user page table.
+  p->pagetable = proc_pagetable(p);
+  if(p->pagetable == 0){
+    freethread(t);
+    release(&t->lock);
+    return 0;
+  }
+
+  // Set up new context to start executing at forkret,
+  // which returns to user space.
+  memset(&t->context, 0, sizeof(t->context));
+  t->context.ra = (uint64)forkret;
+  t->context.sp = t->kstack + PGSIZE;
+
+  if (allocprocthread(p, t) != 0) {
+    return 0;
+  }    
+
+  return t;
+}
+
+// free a thread structure and the data hanging from it,
+// including user pages.
+// t->lock must be held.
+static void
+freethread(struct thread *t)
+{
+  if(t->trapframe)
+    kfree((void*)t->trapframe);
+  t->trapframe = 0;
+  t->tid = 0;
+  t->name[0] = 0;
+  t->chan = 0;
+  t->state = UNUSED;
+}
+
+// a user program that calls exec("/init")
+// assembled from ../user/initcode.S
+// od -t xC ../user/initcode
+uchar initcode[] = {
+  0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
+  0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
+  0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
+  0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
+  0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69, 0x6e, 0x69,
+  0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00
+};
+
+// Set up first user process.
+void
+userinitthread(struct proc *p)
+{
+
+  struct thread *t = allocthread(p);
+  // allocate one user page and copy initcode's instructions
+  // and data into it.
+  uvmfirst(p->pagetable, initcode, sizeof(initcode));
+
+  // prepare for the very first "return" from kernel to user.
+  t->trapframe->epc = 0;      // user program counter
+  t->trapframe->sp = PGSIZE;  // user stack pointer
+
+  safestrcpy(p->name, "initcode", sizeof(p->name));
+  p->cwd = namei("/");
+
+  p->state = RUNNABLE;
+  t->state = T_RUNNABLE;
+  safestrcpy(t->name, "main", sizeof(t->name));
+
+  release(&p->lock);
+}
+
+// Create a new thread, copying the parent.
+// Sets up child kernel stack to return as if from fork() system call.
+// For a thread we need to do a little trick. We should make the thread that calls fork() be the main thread.
+void
+fork_thread(struct proc *np)
+{
+  int i;
+  struct thread *t = mythread();
+  acquire(&t->lock);
+
+  // copy saved user registers.
+  *(np->main_thread->trapframe) = *(t->trapframe);
+
+  // Cause fork to return 0 in the child.
+  np->main_thread->trapframe->a0 = 0;
+  release(&t->lock);
+
+  safestrcpy(t->name, np->main_thread->name, sizeof(t->name));
+}
+
+// This should notify the proccess that it should die.
+// Then we call sched() to then to never come back
+void exit(int status) {
+  struct thread *t = mythread();
+  
+  acquire(&t->lock);
+  t->killed = 1;
+  t->state = T_ZOMBIE;
+  release(&t->lock);
+
+  exit_proc(t->proc, status);
+
+  // Jump into the scheduler, never to return.
+
+  sched();
+  panic("zombie exit");
+}  
+
+// Per-CPU thread scheduler.
+// Each CPU calls scheduler() after setting itself up.
+// Scheduler never returns.  It loops, doing:
+//  - choose a process to run.
+//  - swtch to start running that process.
+//  - eventually that process transfers control
+//    via swtch back to the scheduler.
+void
+scheduler(void)
+{
+  struct thread *t;
+  struct cpu *c = mycpu();
+
+  c->thread = 0;
+  for(;;){
+    // The most recent process to run may have had interrupts
+    // turned off; enable them to avoid a deadlock if all
+    // processes are waiting.
+    intr_on();
+
+    int found = 0;
+    for(t = thread; t < &thread[NTHREAD]; t++) {
+      acquire(&t->lock);
+      if(t->state == T_RUNNABLE) {
+        // Switch to chosen process.  It is the process's job
+        // to release its lock and then reacquire it
+        // before jumping back to us.
+        t->state = T_RUNNING;
+        c->thread = t;
+        swtch(&c->context, &t->context);
+
+        // Process is done running for now.
+        // It should have changed its p->state before coming back.
+        c->thread = 0;
+        found = 1;
+      }
+      release(&t->lock);
+    }
+    if(found == 0) {
+      // nothing to run; stop running on this core until an interrupt.
+      intr_on();
+      asm volatile("wfi");
+    }
+  }
+}
+
+// Switch to scheduler.  Must hold only t->lock
+// and have changed t->state. Saves and restores
+// intena because intena is a property of this
+// kernel thread, not this CPU. It should
+// be thread->intena and thread->noff, but that would
+// break in the few places where a lock is held but
+// there's no thread.
+void
+sched(void)
+{
+  int intena;
+  struct thread *t = mythread();
+
+  if(!holding(&t->lock))
+    panic("sched t->lock");
+  if(mycpu()->noff != 1)
+    panic("sched locks");
+  if(t->state == T_RUNNING)
+    panic("sched running");
+  if(intr_get())
+    panic("sched interruptible");
+
+  intena = mycpu()->intena;
+  swtch(&t->context, &mycpu()->context);
+  mycpu()->intena = intena;
+}
+
+// Give up the CPU for one scheduling round.
+void
+yield(void)
+{
+  struct thread *t = mythread();
+  acquire(&t->lock);
+  t->state = T_RUNNABLE;
+  sched();
+  release(&t->lock);
+}
+
+// Atomically release lock and sleep on chan.
+// Reacquires lock when awakened.
+void
+sleep(void *chan, struct spinlock *lk)
+{
+  struct thread *t = mythread();
+  
+  // Must acquire t->lock in order to
+  // change t->state and then call sched.
+  // Once we hold t->lock, we can be
+  // guaranteed that we won't miss any wakeup
+  // (wakeup locks t->lock),
+  // so it's okay to release lk.
+
+  acquire(&t->lock);  //DOC: sleeplock1
+  release(lk);
+
+  // Go to sleep.
+  t->chan = chan;
+  t->state = T_SLEEPING;
+
+  sched();
+
+  // Tidy up.
+  t->chan = 0;
+
+  // Reacquire original lock.
+  release(&t->lock);
+  acquire(lk);
+}
+
+// Wake up all processes sleeping on chan.
+// Must be called without any p->lock.
+void
+wakeup(void *chan)
+{
+  struct thread *t;
+
+  for(t = thread; t < &thread[NTHREAD]; t++) {
+    if(t != myproc()){
+      acquire(&t->lock);
+      if(t->state == T_SLEEPING && t->chan == chan) {
+        t->state = T_RUNNABLE;
+      }
+      release(&t->lock);
+    }
+  }
+}
+
+void kill_thread(struct thread *t) {
+  if (t == 0) {
+    return;
+  }    
+  acquire(&t->lock);
+  t->killed = 1;
+  t->state = T_RUNNABLE;
+  release(&t->lock);
+}  
+
+int
+killed_thread(struct thread *t)
+{
+  int k;
+  
+  acquire(&t->lock);
+  k = t->killed;
+  release(&t->lock);
+  return k;
+}
+
+
+// Print a thread listing to console.  For debugging.
+// Runs when user types ^P on console.
+// No lock to avoid wedging a stuck machine further.
+void threaddump(struct thread *t) {
+
+  if (t == 0) {
+    return;
+  }    
+  static char *states[] = {
+  [T_UNUSED]    "unused",
+  [T_USED]      "used",
+  [T_SLEEPING]  "sleep ",
+  [T_RUNNABLE]  "runble",
+  [T_RUNNING]   "run   ",
+  [T_ZOMBIE]    "zombie"
+  };
+  ;
+  char *state;
+
+  printf("\n");
+  if(t->state == UNUSED)
+    return;
+  if(t->state >= 0 && t->state < NELEM(states) && states[t->state])
+    state = states[t->state];
+  else
+    state = "???";
+  printf("\t%d %s %s", t->tid, state, t->name);
+  printf("\n");
+}
