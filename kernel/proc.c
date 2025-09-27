@@ -346,7 +346,11 @@ void
 forkret(void)
 {
   static int first = 1;
-  struct proc *p = myproc();
+  struct proc *p;
+  p = myproc();
+  if (p == 0) {
+    return;
+  }    
   // Still holding p->lock from scheduler.
   release(&p->main_thread->lock);
 
