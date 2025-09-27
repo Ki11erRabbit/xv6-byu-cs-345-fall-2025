@@ -4,6 +4,7 @@ struct file;
 struct inode;
 struct pipe;
 struct proc;
+struct thread;
 struct spinlock;
 struct sleeplock;
 struct stat;
@@ -85,11 +86,11 @@ void            printfinit(void);
 int             cpuid(void);
 void exit(int);
 void fork_thread(struct proc*);
-int             kill_thread(struct thread*);
+void             kill_thread(struct thread*);
 struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
 struct proc*    myproc();
-struct thread*    mypthread();
+struct thread*    mythread();
 void            threadinit(void);
 void            scheduler(void) __attribute__((noreturn));
 void            sched(void);
@@ -99,12 +100,16 @@ void            wakeup(void*);
 void            yield(void);
 void            threaddump(struct thread*);
 int killed_thread(struct thread *);
+struct thread* allocthread(struct proc*);
+void freethread(struct thread*);
+pagetable_t thread_trapframe(struct thread *, pagetable_t);
+void            thread_mapstacks(pagetable_t);
 
 
 // proc.c
+void procinit(void);
 int             fork(void);
 int             growproc(int);
-void            proc_mapstacks(pagetable_t);
 pagetable_t     proc_pagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
 int             kill(int);
@@ -115,6 +120,8 @@ int             wait(uint64);
 int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
+int allocprocthread(struct proc *, struct thread *);
+void proc_exit(struct proc *, int);
 
 // swtch.S
 void            swtch(struct context*, struct context*);

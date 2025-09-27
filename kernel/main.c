@@ -19,7 +19,8 @@ main()
     kinit();         // physical page allocator
     kvminit();       // create kernel page table
     kvminithart();   // turn on paging
-    threadinit();    // process table
+    procinit();      // process table
+    threadinit();    // thread table
     trapinit();      // trap vectors
     trapinithart();  // install kernel trap vector
     plicinit();      // set up interrupt controller

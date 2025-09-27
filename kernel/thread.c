@@ -13,11 +13,15 @@ struct thread thread[NTHREAD];
 int nexttid = 1;
 struct spinlock tid_lock;
 
+extern void forkret(void);
+
+extern char trampoline[]; // trampoline.S
+
 // Allocate a page for each threads's kernel stack.
 // Map it high in memory, followed by an invalid
 // guard page.
 void
-proc_mapstacks(pagetable_t kpgtbl)
+thread_mapstacks(pagetable_t kpgtbl)
 {
   struct thread *t;
   
@@ -36,10 +40,10 @@ threadinit(void)
 {
   struct thread *t;
   
-  initlock(&tid_lock, "nextpid");
+  initlock(&tid_lock, "nexttid");
   for(t = thread; t < &thread[NTHREAD]; t++) {
-      initlock(&t->lock, "proc");
-      t->state = UNUSED;
+      initlock(&t->lock, "thread");
+      t->state = T_UNUSED;
       t->kstack = KSTACK((int) (t - thread));
   }
 }
@@ -81,7 +85,10 @@ myproc(void)
 {
   push_off();
   struct cpu *c = mycpu();
-  struct proc *p = c->proc;
+  if (c->thread == 0) {
+    return 0;
+  }
+  struct proc *p = c->thread->proc;
   pop_off();
   return p;
 }
@@ -103,14 +110,14 @@ alloctid()
 // If found, initialize state required to run in the kernel,
 // and return with t->lock held.
 // If there are no free threads, or a memory allocation fails, return 0.
-static struct thread*
+struct thread*
 allocthread(struct proc* p)
 {
   struct thread *t;
 
   for(t = thread; t < &thread[NTHREAD]; t++) {
     acquire(&t->lock);
-    if(t->state == UNUSED) {
+    if(t->state == T_UNUSED) {
       goto found;
     } else {
       release(&t->lock);
@@ -144,18 +151,21 @@ found:
   t->context.sp = t->kstack + PGSIZE;
 
   if (allocprocthread(p, t) != 0) {
+    release(&t->lock);
     return 0;
   }    
 
+  release(&t->lock);
   return t;
 }
 
 // free a thread structure and the data hanging from it,
 // including user pages.
 // t->lock must be held.
-static void
-freethread(struct thread *t)
-{
+void freethread(struct thread *t) {
+  if (t == 0) {
+    return;
+  }    
   if(t->trapframe)
     kfree((void*)t->trapframe);
   t->trapframe = 0;
@@ -187,6 +197,7 @@ userinitthread(struct proc *p)
   // allocate one user page and copy initcode's instructions
   // and data into it.
   uvmfirst(p->pagetable, initcode, sizeof(initcode));
+  p->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
   t->trapframe->epc = 0;      // user program counter
@@ -208,7 +219,6 @@ userinitthread(struct proc *p)
 void
 fork_thread(struct proc *np)
 {
-  int i;
   struct thread *t = mythread();
   acquire(&t->lock);
 
@@ -232,7 +242,7 @@ void exit(int status) {
   t->state = T_ZOMBIE;
   release(&t->lock);
 
-  exit_proc(t->proc, status);
+  proc_exit(t->proc, status);
 
   // Jump into the scheduler, never to return.
 
@@ -363,7 +373,7 @@ wakeup(void *chan)
   struct thread *t;
 
   for(t = thread; t < &thread[NTHREAD]; t++) {
-    if(t != myproc()){
+    if(t != mythread()){
       acquire(&t->lock);
       if(t->state == T_SLEEPING && t->chan == chan) {
         t->state = T_RUNNABLE;
@@ -415,7 +425,7 @@ void threaddump(struct thread *t) {
   char *state;
 
   printf("\n");
-  if(t->state == UNUSED)
+  if(t->state == T_UNUSED)
     return;
   if(t->state >= 0 && t->state < NELEM(states) && states[t->state])
     state = states[t->state];
@@ -423,4 +433,34 @@ void threaddump(struct thread *t) {
     state = "???";
   printf("\t%d %s %s", t->tid, state, t->name);
   printf("\n");
+}
+
+// Create a user page table for a given process, with no user memory,
+// but with trampoline and trapframe pages.
+pagetable_t thread_trapframe(struct thread *t, pagetable_t pagetable) {
+
+  if (t == 0) {
+    return pagetable;
+  }    
+
+  // map the trampoline code (for system call return)
+  // at the highest user virtual address.
+  // only the supervisor uses it, on the way
+  // to/from user space, so not PTE_U.
+  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
+              (uint64)trampoline, PTE_R | PTE_X) < 0){
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
+  // map the trapframe page just below the trampoline page, for
+  // trampoline.S.
+  if(mappages(pagetable, TRAPFRAME, PGSIZE,
+              (uint64)(t->trapframe), PTE_R | PTE_W) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
+  return pagetable;
 }

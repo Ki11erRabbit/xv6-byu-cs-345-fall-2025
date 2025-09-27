@@ -4,6 +4,7 @@
 #include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "thread.h"
 #include "defs.h"
 
 struct proc proc[NPROC];
@@ -16,30 +17,12 @@ struct spinlock pid_lock;
 extern void forkret(void);
 static void freeproc(struct proc *p);
 
-extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
 // memory model when using p->parent.
 // must be acquired before any p->lock.
 struct spinlock wait_lock;
-
-// Allocate a page for each process's kernel stack.
-// Map it high in memory, followed by an invalid
-// guard page.
-void
-proc_mapstacks(pagetable_t kpgtbl)
-{
-  struct proc *p;
-  
-  for(p = proc; p < &proc[NPROC]; p++) {
-    char *pa = kalloc();
-    if(pa == 0)
-      panic("kalloc");
-    uint64 va = KSTACK((int) (p - proc));
-    kvmmap(kpgtbl, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-  }
-}
 
 int
 allocpid()
@@ -54,6 +37,18 @@ allocpid()
   return pid;
 }
 
+// initialize the thread table.
+void
+procinit(void)
+{
+  struct proc *p;
+  
+  initlock(&pid_lock, "nextpid");
+  for(p = proc; p < &proc[NPROC]; p++) {
+      initlock(&p->lock, "proc");
+      p->state = UNUSED;
+  }
+}
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -102,9 +97,6 @@ found:
 static void
 freeproc(struct proc *p)
 {
-  if(p->trapframe)
-    kfree((void*)p->trapframe);
-  p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -117,10 +109,10 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
   for (int i = 0; i < THREADCOUNT; i++) {
-    acquire(p->threads[i]->lock);
-    freethread(&p->threads[i]);
+    acquire(&p->threads[i]->lock);
+    freethread(p->threads[i]);
     p->threads[i] = 0;
-    release(p->threads[i]->lock);
+    release(&p->threads[i]->lock);
   }
   p->main_thread = 0;
 }
@@ -137,24 +129,13 @@ proc_pagetable(struct proc *p)
   if(pagetable == 0)
     return 0;
 
-  // map the trampoline code (for system call return)
-  // at the highest user virtual address.
-  // only the supervisor uses it, on the way
-  // to/from user space, so not PTE_U.
-  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
-    uvmfree(pagetable, 0);
-    return 0;
-  }
-
-  // map the trapframe page just below the trampoline page, for
-  // trampoline.S.
-  if(mappages(pagetable, TRAPFRAME, PGSIZE,
-              (uint64)(p->trapframe), PTE_R | PTE_W) < 0){
-    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
-    uvmfree(pagetable, 0);
-    return 0;
-  }
+  for (int i = 0; i < THREADCOUNT; i++) {
+    struct thread *t = p->threads[i];
+    pagetable = thread_trapframe(t, pagetable);
+    if (pagetable == 0) {
+      return 0;
+    }      
+  }    
 
   return pagetable;
 }
@@ -172,15 +153,7 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 // a user program that calls exec("/init")
 // assembled from ../user/initcode.S
 // od -t xC ../user/initcode
-uchar initcode[] = {
-  0x17, 0x05, 0x00, 0x00, 0x13, 0x05, 0x45, 0x02,
-  0x97, 0x05, 0x00, 0x00, 0x93, 0x85, 0x35, 0x02,
-  0x93, 0x08, 0x70, 0x00, 0x73, 0x00, 0x00, 0x00,
-  0x93, 0x08, 0x20, 0x00, 0x73, 0x00, 0x00, 0x00,
-  0xef, 0xf0, 0x9f, 0xff, 0x2f, 0x69, 0x6e, 0x69,
-  0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00
-};
+extern uchar initcode[];
 
 // Set up first user process.
 void
@@ -191,14 +164,7 @@ userinit(void)
   p = allocproc();
   initproc = p;
   
-  // allocate one user page and copy initcode's instructions
-  // and data into it.
-  uvmfirst(p->pagetable, initcode, sizeof(initcode));
-  p->sz = PGSIZE;
-
   userinitthread(p);
-
-  release(&p->lock);
 }
 
 // Grow or shrink user memory by n bytes.
@@ -287,7 +253,7 @@ reparent(struct proc *p)
 // An exited process remains in the zombie state
 // until its parent calls wait().
 void
-exit_proc(struct proc *p, int status)
+proc_exit(struct proc *p, int status)
 {
   if(p == initproc)
     panic("init exiting");
@@ -380,9 +346,9 @@ void
 forkret(void)
 {
   static int first = 1;
-
+  struct proc *p = myproc();
   // Still holding p->lock from scheduler.
-  release(&myproc()->lock);
+  release(&p->main_thread->lock);
 
   if (first) {
     // File system initialization must be run in the context of a
