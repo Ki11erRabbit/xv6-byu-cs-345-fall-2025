@@ -489,10 +489,15 @@ uint64 thread_spawn(void (*fnptr)(void *), void *arg, char *thread_name) {
   uint64 sp;
   if ((sp = uvmalloc(pagetable, 0, (USERSTACK + 1) * PGSIZE, PTE_W)) == 0)
     return 0;
-  uvmclear(pagetable, 0-(USERSTACK+1)*PGSIZE);
+  uvmclear(pagetable, -(USERSTACK+1)*PGSIZE);
   
   t->trapframe->epc = (uint64)fnptr;
   t->trapframe->sp = sp; // initial stack pointer
+  t->trapframe->a0 = (uint64)arg;
+  if (thread_name)
+    safestrcpy(t->name, thread_name, 13);
+  uint64 tid = t->tid;
   release(&t->lock);
   release(&p->lock);
+  return tid;
 }  
