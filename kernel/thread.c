@@ -487,9 +487,16 @@ uint64 thread_spawn(void (*fnptr)(void *), void *arg, char *thread_name) {
 
   thread_trapframe(t, pagetable);
   uint64 sp;
-  if ((sp = uvmalloc(pagetable, 0, (USERSTACK + 1) * PGSIZE, PTE_W)) == 0)
+  if ((sp = uvmalloc(pagetable, 0, (USERSTACK + 1) * PGSIZE,
+                     PTE_W)) == 0) {
+
+    release(&t->lock);
+    release(&p->lock);
     return 0;
-  uvmclear(pagetable, -(USERSTACK+1)*PGSIZE);
+  }
+  uvmclear(pagetable, -(USERSTACK + 1) * PGSIZE);
+
+  sp = 0;
   
   t->trapframe->epc = (uint64)fnptr;
   t->trapframe->sp = sp; // initial stack pointer
