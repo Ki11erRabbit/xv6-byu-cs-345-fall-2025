@@ -108,12 +108,16 @@ freeproc(struct proc *p)
   p->xstate = 0;
   p->state = UNUSED;
   for (int i = 0; i < THREADCOUNT; i++) {
+    if (p->threads[i] == 0) {
+      continue;
+    }      
     acquire(&p->threads[i]->lock);
     freethread(p->threads[i]);
-    p->threads[i] = 0;
     release(&p->threads[i]->lock);
+    p->threads[i] = 0;
   }
   p->main_thread = 0;
+  p->next_thread = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -244,6 +248,9 @@ fork(void)
 
   acquire(&np->lock);
   np->state = RUNNABLE;
+  acquire(&np->main_thread->lock);
+  np->main_thread->state = T_RUNNABLE;
+  release(&np->main_thread->lock);
   release(&np->lock);
 
   return pid;
@@ -299,6 +306,7 @@ proc_exit(struct proc *p, int status)
 
   p->xstate = status;
   p->state = ZOMBIE;
+  release(&p->lock);
 
   release(&wait_lock);
 }

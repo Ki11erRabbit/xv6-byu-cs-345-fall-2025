@@ -137,14 +137,6 @@ found:
     return 0;
   }
 
-  // An empty user page table.
-  p->pagetable = proc_pagetable(p);
-  if(p->pagetable == 0){
-    freethread(t);
-    release(&t->lock);
-    return 0;
-  }
-
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&t->context, 0, sizeof(t->context));
@@ -271,6 +263,7 @@ void exit(int status) {
 
   proc_exit(t->proc, status);
 
+  acquire(&t->lock);
   // Jump into the scheduler, never to return.
 
   sched();
