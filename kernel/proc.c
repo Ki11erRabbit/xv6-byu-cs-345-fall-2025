@@ -14,6 +14,7 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
+extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
@@ -50,6 +51,33 @@ procinit(void)
       p->state = UNUSED;
   }
 }
+
+
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+void
+forkret(void)
+{
+  static int first = 1;
+  struct thread *t = mythread();
+  // Still holding t->lock from scheduler.
+  release(&t->lock);
+
+  if (first) {
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    fsinit(ROOTDEV);
+
+    first = 0;
+    // ensure other cores see first=0.
+    __sync_synchronize();
+  }
+
+  usertrapret();
+}
+
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -72,7 +100,7 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  struct thread *t = allocthread(p);
+  struct thread *t = allocthread(p, (uint64)forkret);
   if (t == (struct thread *)0) {
     panic("out of threads");
   }

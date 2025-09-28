@@ -4,13 +4,15 @@
 #include "kernel/fs.h"
 #include "kernel/fcntl.h"
 
-void thread(char* input) {
-  printf("%s from thread!", input);
+void thread(void* input) {
+  printf("%s from thread!\n", (char*)input);
+  threadexit();
 }
 
 int main(int argc, char **argv) {
-  printf("spawning thread"); 
-  spawn((void(*)(void*))thread, (void*)"Hello, World!","hello");
-  printf("spawned thread");
+  //printf("spawning thread\n"); 
+  spawn(thread, (void*)"Hello, World!","hello");
+  //printf("spawned thread\n");
+  sleep(10);
   exit(0);
 }

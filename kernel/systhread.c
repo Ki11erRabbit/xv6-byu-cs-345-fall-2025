@@ -12,9 +12,21 @@ uint64 sys_spawn(void) {
   void *thread_arg = 0;
   void (*fnptr)(void *) = 0;
   char *thread_name = 0;
-  argaddr(0, (uint64*)&fnptr);
-  argaddr(1, (uint64*)&thread_arg);
-  argaddr(2, (uint64*)&thread_name);
+  uint64 fnptraddr = 0;
+  uint64 thread_argaddr = 0;
+  uint64 thread_nameaddr = 0;
+  argaddr(0, &fnptraddr);
+  argaddr(1, &thread_argaddr);
+  argaddr(2, &thread_nameaddr);
+
+  fnptr = (void (*)(void *))fnptraddr;
+  thread_arg = (void *)thread_argaddr;
+  thread_name = (char *)thread_nameaddr;
 
   return thread_spawn(fnptr, thread_arg, thread_name);
+}
+
+uint64 sys_threadexit(void) {
+  threadexit();
+  return 0;
 }  

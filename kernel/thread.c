@@ -13,7 +13,6 @@ struct thread thread[NTHREAD];
 int nexttid = 1;
 struct spinlock tid_lock;
 
-extern void forkret(void);
 
 extern char trampoline[]; // trampoline.S
 
@@ -112,11 +111,14 @@ alloctid()
 // and return with t->lock held.
 // If there are no free threads, or a memory allocation fails, return 0.
 struct thread*
-allocthread(struct proc* p)
+allocthread(struct proc* p, uint64 return_addr)
 {
   struct thread *t;
 
-  for(t = thread; t < &thread[NTHREAD]; t++) {
+  for (t = thread; t < &thread[NTHREAD]; t++) {
+    if (holding(&t->lock)) {
+      continue;
+    }      
     acquire(&t->lock);
     if(t->state == T_UNUSED) {
       goto found;
@@ -140,7 +142,7 @@ found:
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&t->context, 0, sizeof(t->context));
-  t->context.ra = (uint64)forkret;
+  t->context.ra = return_addr;
   t->context.sp = t->kstack + PGSIZE;
 
   if (allocprocthread(p, t) != 0) {
@@ -180,32 +182,6 @@ uchar initcode[] = {
   0x74, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00
 };
-
-// A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
-void
-forkret(void)
-{
-  static int first = 1;
-  struct proc *p;
-  p = myproc();
-  // Still holding p->lock from scheduler.
-  release(&p->main_thread->lock);
-
-  if (first) {
-    // File system initialization must be run in the context of a
-    // regular process (e.g., because it calls sleep), and thus cannot
-    // be run from main().
-    fsinit(ROOTDEV);
-
-    first = 0;
-    // ensure other cores see first=0.
-    __sync_synchronize();
-  }
-
-  usertrapret();
-}
-
 
 
 
@@ -264,6 +240,18 @@ void exit(int status) {
   proc_exit(t->proc, status);
 
   acquire(&t->lock);
+  // Jump into the scheduler, never to return.
+
+  sched();
+  panic("zombie exit");
+}
+
+void threadexit(void) {
+  struct thread *t = mythread();
+  
+  acquire(&t->lock);
+  t->killed = 1;
+  t->state = T_ZOMBIE;
   // Jump into the scheduler, never to return.
 
   sched();
@@ -478,33 +466,63 @@ pagetable_t thread_trapframe(struct thread *t, pagetable_t pagetable) {
   return pagetable;
 }
 
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+void
+spawnret(void)
+{
+  struct thread *t = mythread();
+  // Still holding t->lock from scheduler.
+  release(&t->lock);
+
+  usertrapret();
+}
+
 uint64 thread_spawn(void (*fnptr)(void *), void *arg, char *thread_name) {
-  struct proc *p = myproc();
+  struct thread *spawner = mythread();
+  acquire(&spawner->lock);
+  struct proc *p = spawner->proc;
   acquire(&p->lock);
   pagetable_t pagetable = p->pagetable;
-  struct thread *t = allocthread(p);
+  struct thread *t = allocthread(p, (uint64)spawnret);
   acquire(&t->lock);
 
-  thread_trapframe(t, pagetable);
-  uint64 sp;
-  if ((sp = uvmalloc(pagetable, 0, (USERSTACK + 1) * PGSIZE,
-                     PTE_W)) == 0) {
-
+  // thread_trapframe(t, pagetable);
+  uint64 oldsz = p->sz;
+  uint64 newsz = oldsz + PGSIZE;
+  if ((newsz = uvmalloc(pagetable, oldsz, newsz, PTE_W | PTE_U)) == 0) {
     release(&t->lock);
     release(&p->lock);
+    release(&spawner->lock);
     return 0;
   }
-  uvmclear(pagetable, -(USERSTACK + 1) * PGSIZE);
-
-  sp = 0;
-  
+  uint64 stack_top = newsz;
+  p->sz = newsz;
+  *(t->trapframe) = *(spawner->trapframe);
   t->trapframe->epc = (uint64)fnptr;
-  t->trapframe->sp = sp; // initial stack pointer
+  uint64 user_ret_addr = 0;
+  uint64 sp_for_ret = stack_top - sizeof(uint64);
+
+  if (copyout(pagetable, sp_for_ret, (char *)&user_ret_addr, sizeof(uint64)) !=
+      0) {
+    release(&t->lock);
+    release(&p->lock);
+    release(&spawner->lock);
+    return 0;
+  }
+
   t->trapframe->a0 = (uint64)arg;
-  if (thread_name)
-    safestrcpy(t->name, thread_name, 13);
+  t->trapframe->sp = sp_for_ret;
+  //t->trapframe->ra = user_ret_addr;
+  t->trapframe->a7 = 0;
+  
+  
+  t->state = T_RUNNABLE;
+  //if (thread_name)
+  //  safestrcpy(t->name, thread_name, 13);
   uint64 tid = t->tid;
   release(&t->lock);
   release(&p->lock);
+  release(&spawner->lock);
   return tid;
 }  

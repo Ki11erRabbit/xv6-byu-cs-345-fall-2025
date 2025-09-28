@@ -22,7 +22,8 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
-int spawn(void (*)(void*), void *, char*);
+int spawn(void (*)(void *), void *, char *);
+int threadexit(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
