@@ -21,6 +21,7 @@ OBJS = \
   $K/trap.o \
   $K/syscall.o \
   $K/sysproc.o \
+  $K/systhread.o \
   $K/bio.o \
   $K/fs.o \
   $K/log.o \

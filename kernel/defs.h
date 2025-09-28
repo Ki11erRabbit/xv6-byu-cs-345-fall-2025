@@ -103,7 +103,8 @@ int killed_thread(struct thread *);
 struct thread* allocthread(struct proc*);
 void freethread(struct thread*);
 pagetable_t thread_trapframe(struct thread *, pagetable_t);
-void            thread_mapstacks(pagetable_t);
+void thread_mapstacks(pagetable_t);
+uint64 thread_spawn(void (*)(void *), void *, char *);
 
 
 // proc.c

@@ -477,3 +477,22 @@ pagetable_t thread_trapframe(struct thread *t, pagetable_t pagetable) {
 
   return pagetable;
 }
+
+uint64 thread_spawn(void (*fnptr)(void *), void *arg, char *thread_name) {
+  struct proc *p = myproc();
+  acquire(&p->lock);
+  pagetable_t pagetable = p->pagetable;
+  struct thread *t = allocthread(p);
+  acquire(&t->lock);
+
+  thread_trapframe(t, pagetable);
+  uint64 sp;
+  if ((sp = uvmalloc(pagetable, 0, (USERSTACK + 1) * PGSIZE, PTE_W)) == 0)
+    return 0;
+  uvmclear(pagetable, 0-(USERSTACK+1)*PGSIZE);
+  
+  t->trapframe->epc = (uint64)fnptr;
+  t->trapframe->sp = sp; // initial stack pointer
+  release(&t->lock);
+  release(&p->lock);
+}  
