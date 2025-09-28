@@ -86,6 +86,7 @@ myproc(void)
   push_off();
   struct cpu *c = mycpu();
   if (c->thread == 0) {
+    pop_off();
     return 0;
   }
   struct proc *p = c->thread->proc;
@@ -263,24 +264,27 @@ scheduler(void)
 
   c->thread = 0;
   for(;;){
-    // The most recent process to run may have had interrupts
+    // The most recent thread to run may have had interrupts
     // turned off; enable them to avoid a deadlock if all
-    // processes are waiting.
+    // threads are waiting.
     intr_on();
 
     int found = 0;
     for(t = thread; t < &thread[NTHREAD]; t++) {
       acquire(&t->lock);
       if(t->state == T_RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
+        // Switch to chosen thread.  It is the thread's job
         // to release its lock and then reacquire it
         // before jumping back to us.
         t->state = T_RUNNING;
         c->thread = t;
+        acquire(&t->proc->lock);
+        t->proc->state = RUNNING;
+        release(&t->proc->lock);
         swtch(&c->context, &t->context);
 
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
+        // Thread is done running for now.
+        // It should have changed its t->state before coming back.
         c->thread = 0;
         found = 1;
       }

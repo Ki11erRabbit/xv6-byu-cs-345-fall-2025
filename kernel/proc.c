@@ -497,6 +497,6 @@ int allocprocthread(struct proc *p, struct thread *t) {
   if (p->main_thread == 0) {
     p->main_thread = t;
   }    
-  
+  t->proc = p;
   return 0;
 }  
