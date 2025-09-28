@@ -14,9 +14,9 @@ struct proc *initproc;
 int nextpid = 1;
 struct spinlock pid_lock;
 
-extern void forkret(void);
 static void freeproc(struct proc *p);
 
+extern char trampoline[]; // trampoline.S
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -44,6 +44,7 @@ procinit(void)
   struct proc *p;
   
   initlock(&pid_lock, "nextpid");
+  initlock(&wait_lock, "wait_lock");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
@@ -71,6 +72,12 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  struct thread *t = allocthread(p);
+  if (t == (struct thread *)0) {
+    panic("out of threads");
+  }
+  p->main_thread = t;
+  safestrcpy(t->name, "main", sizeof(t->name));
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -79,14 +86,6 @@ found:
     release(&p->lock);
     return 0;
   }
-
-  struct thread *t = allocthread(p);
-  if (t == (struct thread *)0) {
-    panic("out of threads");
-  }
-  p->main_thread = t;
-  safestrcpy(t->name, "main", sizeof(t->name));
-  
 
   return p;
 }
@@ -129,14 +128,28 @@ proc_pagetable(struct proc *p)
   if(pagetable == 0)
     return 0;
 
+  // map the trampoline code (for system call return)
+  // at the highest user virtual address.
+  // only the supervisor uses it, on the way
+  // to/from user space, so not PTE_U.
+  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
+              (uint64)trampoline, PTE_R | PTE_X) < 0){
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+  
+  int success = 0;
   for (int i = 0; i < THREADCOUNT; i++) {
     struct thread *t = p->threads[i];
     pagetable = thread_trapframe(t, pagetable);
-    if (pagetable == 0) {
-      return 0;
+    if (pagetable != 0) {
+      success = 1;
     }      
-  }    
+  }
 
+  if (!success) {
+    return 0;
+  }    
   return pagetable;
 }
 
@@ -339,33 +352,6 @@ wait(uint64 addr)
   }
 }
 
-
-
-
-// A fork child's very first scheduling by scheduler()
-// will swtch to forkret.
-void
-forkret(void)
-{
-  static int first = 1;
-  struct proc *p;
-  p = myproc();
-  // Still holding p->lock from scheduler.
-  release(&p->main_thread->lock);
-
-  if (first) {
-    // File system initialization must be run in the context of a
-    // regular process (e.g., because it calls sleep), and thus cannot
-    // be run from main().
-    fsinit(ROOTDEV);
-
-    first = 0;
-    // ensure other cores see first=0.
-    __sync_synchronize();
-  }
-
-  usertrapret();
-}
 
 
 

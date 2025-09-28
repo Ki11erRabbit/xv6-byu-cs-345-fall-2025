@@ -189,7 +189,35 @@ uchar initcode[] = {
   0x00, 0x00, 0x00, 0x00
 };
 
-// Set up first user process.
+// A fork child's very first scheduling by scheduler()
+// will swtch to forkret.
+void
+forkret(void)
+{
+  static int first = 1;
+  struct proc *p;
+  p = myproc();
+  // Still holding p->lock from scheduler.
+  release(&p->main_thread->lock);
+
+  if (first) {
+    // File system initialization must be run in the context of a
+    // regular process (e.g., because it calls sleep), and thus cannot
+    // be run from main().
+    fsinit(ROOTDEV);
+
+    first = 0;
+    // ensure other cores see first=0.
+    __sync_synchronize();
+  }
+
+  usertrapret();
+}
+
+
+
+
+// Set up first user process thread.
 void
 userinitthread(struct proc *p)
 {
@@ -444,16 +472,6 @@ pagetable_t thread_trapframe(struct thread *t, pagetable_t pagetable) {
   if (t == 0) {
     return pagetable;
   }    
-
-  // map the trampoline code (for system call return)
-  // at the highest user virtual address.
-  // only the supervisor uses it, on the way
-  // to/from user space, so not PTE_U.
-  if(mappages(pagetable, TRAMPOLINE, PGSIZE,
-              (uint64)trampoline, PTE_R | PTE_X) < 0){
-    uvmfree(pagetable, 0);
-    return 0;
-  }
 
   // map the trapframe page just below the trampoline page, for
   // trampoline.S.
