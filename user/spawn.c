@@ -10,9 +10,9 @@ void thread(void* input) {
 }
 
 int main(int argc, char **argv) {
-  //printf("spawning thread\n"); 
+  printf("spawning thread\n"); 
   spawn(thread, (void*)"Hello, World!","hello");
-  //printf("spawned thread\n");
+  printf("spawned thread\n");
   sleep(10);
   exit(0);
 }

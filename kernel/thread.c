@@ -289,6 +289,13 @@ scheduler(void)
         c->thread = t;
         acquire(&t->proc->lock);
         t->proc->state = RUNNING;
+
+        uvmunmap(t->proc->pagetable, TRAPFRAME, 1, 0);
+        if(mappages(t->proc->pagetable, TRAPFRAME, PGSIZE,
+                    (uint64)(t->trapframe), PTE_R | PTE_W | PTE_V) < 0) {
+          panic("scheduler: trapframe remap failed");
+        }
+
         release(&t->proc->lock);
         swtch(&c->context, &t->context);
 
