@@ -19,3 +19,7 @@ va 0xFFFFC000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory.
 va 0xFFFFD000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
 va 0xFFFFE000 pte 0x21FD08C7 pa 0x87F42000 perm 0xC7 : The perms set are valid, read, write, accessed, dirty, PPN into a page directory
 va 0xFFFFF000 pte 0x2000184B pa 0x80006000 perm 0x4B : The perms set are valid, read, exec, accessed, PPN into another page directory
+
+2. Other syscalls that could be optimized this way include uptime because we could have a shared userspace page that all processes have access to that the kernel updates.
+
+3.
