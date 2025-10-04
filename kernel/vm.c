@@ -253,7 +253,7 @@ uvmfirst(pagetable_t pagetable, uchar *src, uint sz)
 uint64
 uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
-  char *mem;
+  char *mem = 0;
   uint64 a;
   int sz;
 
@@ -271,8 +271,41 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 #ifndef LAB_SYSCALL
     memset(mem, 0, sz);
 #endif
-    if(mappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){
-      kfree(mem);
+    if(mappages(pagetable, a, sz, (uint64)mem, (PTE_R|PTE_U|xperm) ^ PTE_V) != 0){
+      //kfree(mem);
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+  }
+  return newsz;
+}
+
+// Allocate PTEs and physical memory to grow process from oldsz to
+// newsz, which need not be page aligned.  Returns new size or 0 on error.
+uint64
+uvmalloc_lazy(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
+{
+  char *mem = 0;
+  uint64 a;
+  int sz;
+
+  if(newsz < oldsz)
+    return oldsz;
+
+  oldsz = PGROUNDUP(oldsz);
+  for(a = oldsz; a < newsz; a += sz){
+    sz = PGSIZE;
+    /*mem = kalloc();
+    if(mem == 0){
+      uvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+#ifndef LAB_SYSCALL
+    memset(mem, 0, sz);
+#endif
+    */
+    if(mappages(pagetable, a, sz, (uint64)mem, (PTE_R|PTE_U|xperm) ^ PTE_V) != 0){
+      //kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -537,4 +570,35 @@ pte_t*
 pgpte(pagetable_t pagetable, uint64 va) {
   return walk(pagetable, va, 0);
 }
+
+int pagefault(pagetable_t pagetable, uint64 sz, uint64 va, int access_violation) {
+  if (va >= MAXVA)
+    return -1;
+  pte_t *pte = pgpte(pagetable, va);
+  if (pte == 0) {
+    return -1;
+  }
+
+  if (!(PTE_FLAGS(*pte) & PTE_U)) {
+    return -1;
+  }
+
+  // check if the flags don't match the access violation
+  if ((PTE_FLAGS(*pte) & access_violation) == 0) {
+    return -1;
+  }    
+  
+  char *mem = kalloc();
+
+  if(mappages(pagetable, sz, sz, (uint64)mem, (PTE_R|PTE_U|PTE_W)) != 0){
+    kfree(mem);
+    uvmdealloc(pagetable, sz, sz);
+    return -1;
+  }
+#ifndef LAB_SYSCALL
+  memset(mem, 0, sz);
+#endif
+  return 0;
+}  
+
 #endif

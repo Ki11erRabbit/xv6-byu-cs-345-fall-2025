@@ -67,12 +67,20 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if (r_scause() == 5 || r_scause() == 7 || r_scause() == 13 ||
+             r_scause() == 15) {
+    int access_violation = 0;
+    if (r_scause() == 7 || r_scause() == 15) {
+      access_violation = PTE_W;
+    }
+    if (pagefault(p->pagetable, p->sz, r_stval(), access_violation) < 0) {
+      setkilled(p);
+    }      
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
     printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
     setkilled(p);
   }
-
   if(killed(p))
     exit(-1);
 
