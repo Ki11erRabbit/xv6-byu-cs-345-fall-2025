@@ -542,7 +542,7 @@ void vmprintlogic(pagetable_t pagetable, int depth) {
       vmprintlogic((pagetable_t)child, depth + 1);
     } else if(pte & PTE_V){
       if (depth >= 0) {
-        printf("..");
+        printf(" ..");
       }
       if (depth >= 1) {
         printf(" ..");
