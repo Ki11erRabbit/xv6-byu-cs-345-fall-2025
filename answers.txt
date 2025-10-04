@@ -1,0 +1,21 @@
+1. 
+va 0x0 pte 0x21FC885B pa 0x87F22000 perm 0x5B        : the perms set are valid, read, exec, user, accessed. This contains an the PPN into a page directory.
+va 0x1000 pte 0x21FC7C17 pa 0x87F1F000 perm 0x17     : the perms set are valid, read,write, user. This contains a PPN into a page directory
+va 0x2000 pte 0x21FC7807 pa 0x87F1E000 perm 0x7      : The perms set are valid, read, write. This contains a PPN into a page directory
+va 0x3000 pte 0x21FC74D7 pa 0x87F1D000 perm 0xD7     : The perms set are valid, read, write, user, accessed, dirty. This contains a PPN into a page directory.
+va 0x4000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0x5000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0x6000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0x7000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0x8000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0x9000 pte 0x0 pa 0x0 perm 0x0                    : This is a page directory. PPN into another page directory
+va 0xFFFF6000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFF7000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFF8000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFF9000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFFA000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFFB000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFFC000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFFD000 pte 0x0 pa 0x0 perm 0x0                : This is a page directory. PPN into another page directory
+va 0xFFFFE000 pte 0x21FD08C7 pa 0x87F42000 perm 0xC7 : The perms set are valid, read, write, accessed, dirty, PPN into a page directory
+va 0xFFFFF000 pte 0x2000184B pa 0x80006000 perm 0x4B : The perms set are valid, read, exec, accessed, PPN into another page directory
