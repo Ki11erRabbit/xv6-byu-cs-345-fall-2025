@@ -272,7 +272,7 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     memset(mem, 0, sz);
 #endif
     if(mappages(pagetable, a, sz, (uint64)mem, (PTE_R|PTE_U|xperm) ^ PTE_V) != 0){
-      //kfree(mem);
+      kfree(mem);
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
@@ -285,7 +285,6 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 uint64
 uvmalloc_lazy(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
 {
-  char *mem = 0;
   uint64 a;
   int sz;
 
@@ -293,22 +292,15 @@ uvmalloc_lazy(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     return oldsz;
 
   oldsz = PGROUNDUP(oldsz);
-  for(a = oldsz; a < newsz; a += sz){
+  for (a = oldsz; a < newsz; a += sz) {
     sz = PGSIZE;
-    /*mem = kalloc();
-    if(mem == 0){
+    pte_t *pte = walk(pagetable, a, 1);
+    if (pte == 0) {
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
-#ifndef LAB_SYSCALL
-    memset(mem, 0, sz);
-#endif
-    */
-    if(mappages(pagetable, a, sz, (uint64)mem, (PTE_R|PTE_U|xperm) ^ PTE_V) != 0){
-      //kfree(mem);
-      uvmdealloc(pagetable, a, oldsz);
-      return 0;
-    }
+    *pte |= 1 << 8;
+    *pte |= xperm | PTE_V;
   }
   return newsz;
 }
@@ -571,30 +563,35 @@ pgpte(pagetable_t pagetable, uint64 va) {
   return walk(pagetable, va, 0);
 }
 
-int pagefault(pagetable_t pagetable, uint64 sz, uint64 va, int access_violation) {
+int pagefault(pagetable_t pagetable, uint64 sz, uint64 va,
+              int access_violation) {
   if (va >= MAXVA)
     return -1;
+  //va = PGROUNDDOWN(va);
   pte_t *pte = pgpte(pagetable, va);
   if (pte == 0) {
+    printf("null pte\n");
     return -1;
   }
 
-  if (!(PTE_FLAGS(*pte) & PTE_U)) {
+  if ((*pte & (1 << 8)) == 0) {
     return -1;
   }
+  *pte ^= (1 << 8);
+
+  /*if (!(PTE_FLAGS(*pte) & PTE_U)) {
+    return -1;
+    }*/
 
   // check if the flags don't match the access violation
-  if ((PTE_FLAGS(*pte) & access_violation) == 0) {
+  /*if (((PTE_FLAGS(*pte) & access_violation) == 0) && access_violation != 0) {
     return -1;
-  }    
-  
+    }*/
+
   char *mem = kalloc();
 
-  if(mappages(pagetable, sz, sz, (uint64)mem, (PTE_R|PTE_U|PTE_W)) != 0){
-    kfree(mem);
-    uvmdealloc(pagetable, sz, sz);
-    return -1;
-  }
+  *pte |= PA2PTE(mem);
+
 #ifndef LAB_SYSCALL
   memset(mem, 0, sz);
 #endif
