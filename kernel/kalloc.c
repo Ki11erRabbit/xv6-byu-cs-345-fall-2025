@@ -10,6 +10,7 @@
 #include "defs.h"
 
 void freerange(void *pa_start, void *pa_end);
+void kfree_init(void *pa);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -22,6 +23,52 @@ struct {
   struct spinlock lock;
   struct run *freelist;
 } kmem;
+
+#define TRANSFORM(addr) ((addr - KERNBASE) / PGSIZE)
+
+unsigned char ref_count[TRANSFORM(PHYSTOP)] = {0};
+
+static void _init_count(uint64 phys_mem) {
+  uint64 index = TRANSFORM(phys_mem);
+  ref_count[index] = 1;
+}
+
+static unsigned char _increment_ref(uint64 phys_mem) {
+  uint64 index = TRANSFORM(phys_mem);
+  ref_count[index] += 1;
+  printf("incremented ref: %d\n", ref_count[index]);
+  return ref_count[index];
+}
+
+static unsigned char _decrement_ref(uint64 phys_mem) {
+  uint64 index = TRANSFORM(phys_mem);
+  if (ref_count[index] == 0) {
+    printf("ref count already at 0\n");
+    return 0;
+  }    
+  ref_count[index] -= 1;
+  printf("decremented ref: %d\n", ref_count[index]);
+  return ref_count[index];
+}
+
+unsigned char increment_ref(uint64 phys_mem) {
+  acquire(&kmem.lock);
+
+  unsigned char value = _increment_ref(phys_mem);
+
+  release(&kmem.lock);
+  return value;
+}
+
+unsigned char decrement_ref(uint64 phys_mem) {
+  acquire(&kmem.lock);
+
+  unsigned char value = _decrement_ref(phys_mem);
+
+  release(&kmem.lock);
+
+  return value;
+}  
 
 void
 kinit()
@@ -36,7 +83,30 @@ freerange(void *pa_start, void *pa_end)
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+    kfree_init(p);
+}
+
+// Free the page of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to kalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void
+kfree_init(void *pa)
+{
+  struct run *r;
+
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
+
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, PGSIZE);
+
+  r = (struct run*)pa;
+
+  acquire(&kmem.lock);
+  r->next = kmem.freelist;
+  kmem.freelist = r;
+  release(&kmem.lock);
 }
 
 // Free the page of physical memory pointed at by pa,
@@ -50,6 +120,11 @@ kfree(void *pa)
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
+
+  if (_decrement_ref((uint64)pa) != 0) {
+    printf("Refcount not 0 yet\n");
+    return;
+  }    
 
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
@@ -74,6 +149,8 @@ kalloc(void)
   r = kmem.freelist;
   if(r)
     kmem.freelist = r->next;
+  if (r)
+    _init_count((uint64)r);
   release(&kmem.lock);
 
   if(r)

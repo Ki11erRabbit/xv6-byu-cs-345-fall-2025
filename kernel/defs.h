@@ -62,7 +62,9 @@ void            ramdiskrw(struct buf*);
 // kalloc.c
 void*           kalloc(void);
 void            kfree(void *);
-void            kinit(void);
+void kinit(void);
+unsigned char increment_ref(uint64);
+unsigned char decrement_ref(uint64);
 
 // log.c
 void            initlog(int, struct superblock*);
