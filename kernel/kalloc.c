@@ -68,7 +68,23 @@ unsigned char decrement_ref(uint64 phys_mem) {
   release(&kmem.lock);
 
   return value;
-}  
+}
+
+unsigned char _get_count(uint64 phys_mem) {
+  uint64 index = TRANSFORM(phys_mem);
+  return ref_count[index];
+}
+
+unsigned char get_ref_count(uint64 phys_mem) {
+  acquire(&kmem.lock);
+
+  unsigned char value = _get_count(phys_mem);
+
+  release(&kmem.lock);
+
+  return value;
+}
+
 
 void
 kinit()

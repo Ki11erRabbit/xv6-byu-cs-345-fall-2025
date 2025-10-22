@@ -331,7 +331,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     /*if((mem = kalloc()) == 0)
       goto err;
       memmove(mem, (char*)pa, PGSIZE);*/
+
     increment_ref(pa);
+    uvmrealcopy(old, i);
     if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       kfree((char*)pa);
       goto err;
@@ -342,7 +344,39 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
-}
+ }
+
+ int uvmrealcopy(pagetable_t table, uint64 virt_addr) {
+   char *mem;
+
+   pte_t* pte = walk(table, virt_addr, 0);
+   uint flags = PTE_FLAGS(*pte);
+   uint64 phys_addr = PTE2PA(*pte);
+   
+   if (get_ref_count(phys_addr) == 1) {
+     uvmunmap(table, virt_addr, 1, 0);
+     if (mappages(table, virt_addr, PGSIZE, phys_addr,
+                  (flags ^ PTE_COW) | PTE_W) != 0) {
+       panic("can't touch the original page");
+     }
+
+   } else if (decrement_ref(phys_addr) >= 1) {
+     if ((mem = kalloc()) == 0) {
+       kfree(mem);
+       return -1;
+     }
+
+     memmove(mem, (char *)phys_addr, PGSIZE);
+
+     uvmunmap(table, virt_addr, 1, 0);
+     if (mappages(table, virt_addr, PGSIZE, (uint64)mem,
+                  (flags ^ PTE_COW) | PTE_W) != 0) {
+       kfree(mem);
+       return -1;
+     }
+   }
+   return 0;
+ }   
 
 // mark a PTE invalid for user access.
 // used by exec for the user stack guard page.
