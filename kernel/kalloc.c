@@ -36,18 +36,18 @@ static void _init_count(uint64 phys_mem) {
 static unsigned char _increment_ref(uint64 phys_mem) {
   uint64 index = TRANSFORM(phys_mem);
   ref_count[index] += 1;
-  printf("incremented ref: %d\n", ref_count[index]);
+  //printf("incremented ref: %d\n", ref_count[index]);
   return ref_count[index];
 }
 
 static unsigned char _decrement_ref(uint64 phys_mem) {
   uint64 index = TRANSFORM(phys_mem);
   if (ref_count[index] == 0) {
-    printf("ref count already at 0\n");
+    //printf("ref count already at 0\n");
     return 0;
   }    
   ref_count[index] -= 1;
-  printf("decremented ref: %d\n", ref_count[index]);
+  //printf("decremented ref: %d\n", ref_count[index]);
   return ref_count[index];
 }
 
@@ -138,7 +138,7 @@ kfree(void *pa)
     panic("kfree");
 
   if (_decrement_ref((uint64)pa) != 0) {
-    printf("Refcount not 0 yet\n");
+    //printf("Refcount not 0 yet\n");
     return;
   }    
 

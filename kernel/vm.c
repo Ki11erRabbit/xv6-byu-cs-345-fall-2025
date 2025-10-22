@@ -333,7 +333,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       memmove(mem, (char*)pa, PGSIZE);*/
 
     increment_ref(pa);
-    uvmrealcopy(old, i);
+    //uvmrealcopy(old, i);
     if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
       kfree((char*)pa);
       goto err;
@@ -349,6 +349,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
  int uvmrealcopy(pagetable_t table, uint64 virt_addr) {
    char *mem;
 
+   virt_addr = PGROUNDDOWN(virt_addr);
+   
    pte_t* pte = walk(table, virt_addr, 0);
    uint flags = PTE_FLAGS(*pte);
    uint64 phys_addr = PTE2PA(*pte);
@@ -488,3 +490,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+int pagefault(pagetable_t table, uint64 virt_address, int write_fault) {
+   virt_address = PGROUNDDOWN(virt_address);
+
+   pte_t *pte = walk(table, virt_address, 0);
+
+   if (pte == 0) {
+     return -1;
+   }
+   
+   uint flags = PTE_FLAGS(*pte);
+
+   if (virt_address >= MAXVA) {
+     return -1;
+   }
+
+   if (write_fault) {
+     if ((flags & PTE_COW) != PTE_COW) {
+       return -1;
+     }       
+     
+    if (uvmrealcopy(table, virt_address) != 0) {
+      return -1;
+    }      
+  }
+
+  return 0;
+}  

@@ -49,8 +49,14 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  if (r_scause() == 15) {
+    //printf("pagefault\n");
+    if (pagefault(p->pagetable, r_stval(), 1) == -1) {
+      printf("killing process\n");
+      setkilled(p);
+    }      
+  } else if (r_scause() == 8){
     // system call
 
     if(killed(p))
