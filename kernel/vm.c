@@ -350,8 +350,12 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
    char *mem;
 
    virt_addr = PGROUNDDOWN(virt_addr);
-   
-   pte_t* pte = walk(table, virt_addr, 0);
+
+   pte_t *pte = walk(table, virt_addr, 0);
+
+   if (pte == 0) {
+     return -1;
+   }     
    uint flags = PTE_FLAGS(*pte);
    uint64 phys_addr = PTE2PA(*pte);
    
@@ -407,6 +411,9 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
     if(va0 >= MAXVA)
       return -1;
     pte = walk(pagetable, va0, 0);
+    if ((*pte & PTE_COW) == PTE_COW) {
+      pagefault(pagetable, dstva, 1);
+    }      
     if(pte == 0 || (*pte & PTE_V) == 0 || (*pte & PTE_U) == 0 ||
        (*pte & PTE_W) == 0)
       return -1;
@@ -492,9 +499,13 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 int pagefault(pagetable_t table, uint64 virt_address, int write_fault) {
+   if (virt_address >= MAXVA) {
+     return -1;
+   }
+
    virt_address = PGROUNDDOWN(virt_address);
 
-   pte_t *pte = walk(table, virt_address, 0);
+   pte_t *pte = walk(table, virt_address, 1);
 
    if (pte == 0) {
      return -1;
@@ -502,17 +513,14 @@ int pagefault(pagetable_t table, uint64 virt_address, int write_fault) {
    
    uint flags = PTE_FLAGS(*pte);
 
-   if (virt_address >= MAXVA) {
-     return -1;
-   }
-
    if (write_fault) {
      if ((flags & PTE_COW) != PTE_COW) {
        return -1;
-     }       
-     
-    if (uvmrealcopy(table, virt_address) != 0) {
-      return -1;
+     }
+
+     if (uvmrealcopy(table, virt_address) != 0) {
+       printf("real copy failed\n");
+       return -1;
     }      
   }
 

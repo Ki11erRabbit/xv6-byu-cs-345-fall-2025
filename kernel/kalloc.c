@@ -43,7 +43,8 @@ static unsigned char _increment_ref(uint64 phys_mem) {
 static unsigned char _decrement_ref(uint64 phys_mem) {
   uint64 index = TRANSFORM(phys_mem);
   if (ref_count[index] == 0) {
-    //printf("ref count already at 0\n");
+    // printf("ref count already at 0\n");
+    panic("ref count hit zero again");
     return 0;
   }    
   ref_count[index] -= 1;
