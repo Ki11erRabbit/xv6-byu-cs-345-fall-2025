@@ -360,12 +360,8 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
    uint64 phys_addr = PTE2PA(*pte);
    
    if (get_ref_count(phys_addr) == 1) {
-     uvmunmap(table, virt_addr, 1, 0);
-     if (mappages(table, virt_addr, PGSIZE, phys_addr,
-                  (flags ^ PTE_COW) | PTE_W) != 0) {
-       panic("can't touch the original page");
-     }
-
+     *pte ^= PTE_COW;
+     *pte |= PTE_W;
    } else if (decrement_ref(phys_addr) >= 1) {
      if ((mem = kalloc()) == 0) {
        kfree(mem);

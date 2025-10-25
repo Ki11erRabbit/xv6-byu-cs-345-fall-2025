@@ -116,7 +116,7 @@ kfree_init(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
+  memset(pa, 2, PGSIZE);
 
   r = (struct run*)pa;
 
@@ -138,17 +138,18 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  acquire(&kmem.lock);
   if (_decrement_ref((uint64)pa) != 0) {
     //printf("Refcount not 0 yet\n");
+    release(&kmem.lock);
     return;
   }    
 
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
+  memset(pa, 2, PGSIZE);
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
   r->next = kmem.freelist;
   kmem.freelist = r;
   release(&kmem.lock);
