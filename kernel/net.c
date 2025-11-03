@@ -19,11 +19,78 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 
+#define UDP_SOCKETS_SIZE 16
+
+struct packet_queue {
+  char *buffer;
+  int len;
+  struct packet_queue *next;
+  struct packet_queue *prev;
+};
+
+struct bind_data {
+  int port;
+  struct proc *proc;
+  struct spinlock lock;
+  int socket;
+  struct packet_queue *head;
+  struct packet_queue *tail;
+} udp_sockets[UDP_SOCKETS_SIZE] = { 0 };
+
+
 void
 netinit(void)
 {
   initlock(&netlock, "netlock");
+  for (struct bind_data *ptr = udp_sockets;
+       ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
+    initlock(&ptr->lock, "socketlock");
+    ptr->socket = udp_sockets - ptr;
+  }
 }
+
+struct bind_data *alloc_socket(int port) {
+  acquire(&netlock);
+  struct bind_data *ptr = 0;
+
+  for (ptr = udp_sockets; ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
+    if (ptr->proc == 0) {
+      push_off();
+      if (!holding(&ptr->lock)) {
+        acquire(&ptr->lock);
+        ptr->port = port;
+        ptr->proc = myproc();
+        release(&ptr->lock);
+      } else {
+        pop_off();
+        continue;
+      }
+      pop_off();
+      break;
+    }      
+  }
+  release(&netlock);
+  if (ptr == udp_sockets + UDP_SOCKETS_SIZE) {
+    return 0;
+  }    
+  return ptr;
+}
+
+struct bind_data *get_socket(int socket) {
+  if (socket < 0 || socket >= UDP_SOCKETS_SIZE) {
+    return 0;
+  }
+  return &udp_sockets[socket];
+}  
+
+void free_socket(struct bind_data* data) {
+  acquire(&data->lock);
+
+  data->port = 0;
+  data->proc = 0;
+  
+  release(&data->lock);
+}  
 
 
 //
@@ -37,8 +104,16 @@ sys_bind(void)
   //
   // Your code here.
   //
+  int port;
+  argint(0, &port);
+  port = ntohl(port);
 
-  return -1;
+  struct bind_data * socket_data = alloc_socket(port);
+  if (socket_data == 0) {
+    return -1;
+  }    
+  
+  return socket_data->socket;
 }
 
 //
@@ -77,6 +152,27 @@ sys_recv(void)
   //
   // Your code here.
   //
+  int dport;
+  int *src;
+  short *src_port;
+  char *buf;
+  int maxlen;
+  argint(0, &dport);
+  argint(1, &src);
+  argint(2, &src_port);
+  argint(3, &buf);
+  argint(4, &maxlen);
+
+  struct bind_data *data = get_socket(dport);
+
+  if (data == 0)
+    return -1;
+
+  acquire(&data->lock);
+  *src_port = data->port;
+  
+
+  release(&data->lock);
   return -1;
 }
 
