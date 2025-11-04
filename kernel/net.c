@@ -152,6 +152,7 @@ sys_recv(void)
   //
   // Your code here.
   //
+/*  
   int dport;
   int *src;
   short *src_port;
@@ -172,7 +173,7 @@ sys_recv(void)
   *src_port = data->port;
   
 
-  release(&data->lock);
+  release(&data->lock);*/
   return -1;
 }
 
