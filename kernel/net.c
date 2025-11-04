@@ -22,7 +22,7 @@ static struct spinlock netlock;
 #define UDP_SOCKETS_SIZE 16
 
 struct packet_queue {
-  char *buffer;
+  char *packet;
   int len;
   struct packet_queue *next;
   struct packet_queue *prev;
@@ -33,6 +33,7 @@ struct bind_data {
   struct proc *proc;
   struct spinlock lock;
   int socket;
+  int packet_queue_len;
   struct packet_queue *head;
   struct packet_queue *tail;
 } udp_sockets[UDP_SOCKETS_SIZE] = { 0 };
@@ -90,8 +91,21 @@ void free_socket(struct bind_data* data) {
   data->proc = 0;
   
   release(&data->lock);
-}  
+}
 
+struct bind_data *find_from_port(uint16 port) {
+
+  for (struct bind_data *ptr = udp_sockets;
+       ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
+    acquire(&ptr->lock);
+    if (ptr->port == port) {
+      release(&ptr->lock);
+      return ptr;
+    }
+    release(&ptr->lock);
+  }
+  return 0;
+}  
 
 //
 // bind(int port)
@@ -285,10 +299,59 @@ ip_rx(char *buf, int len)
     printf("ip_rx: received an IP packet\n");
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
+  struct eth *eth = (struct eth *)buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+
+  if (ip->ip_p != IPPROTO_UDP) {
+    return;
+  }
+
+  struct udp *packet = (struct udp *)(ip + 1);
+
+  acquire(&netlock);
+
+  uint16 port = ntohl(packet->dport);
+
+  struct bind_data *socket = find_from_port(port);
+  if (socket == 0) {
+    release(&netlock);
+    return;
+  }
+
+  acquire(&socket->lock);
+
+  if (socket->packet_queue_len == UDP_SOCKETS_SIZE) {
+    release(&netlock);
+    return;
+  }    
+
+  char *buf_copy = kalloc();
+
+  if (buf_copy == 0) {
+    panic("out of memory");
+  }
+  struct packet_queue *node = kalloc();
+
+  if (node == 0) {
+    panic("out of memory");
+  }
+
+  memmove((void *)buf_copy, (void *)packet, packet->ulen);
+
+  socket->packet_queue_len++;
+  node->packet = buf_copy;
+  node->len = packet->ulen;
+
+  node->prev = socket->tail;
+  socket->tail->next = node;
+  node->next = 0;
+  socket->tail = node;
+
+  release(&socket->lock);
+
+  wakeup(socket->proc->chan);
   
+  release(&netlock);
 }
 
 //
