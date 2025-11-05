@@ -185,7 +185,7 @@ sys_recv(void)
   argaddr(1, (uint64*)&src);
   argaddr(2, (uint64*)&src_port);
   argaddr(3, (uint64*)&buf);
-  argaddr(4, (uint64*)&maxlen);
+  argint(4, &maxlen);
 
   struct bind_data *data = get_socket(dport);
 
@@ -214,17 +214,19 @@ sys_recv(void)
   struct packet_queue *head = &data->queue[data->head];
   struct udp *packet = (struct udp *)head->packet;
   data->head = (data->head - 1) % UDP_SOCKETS_SIZE;
-  int len = ntohl(packet->ulen);
+  int len = ntohl(packet->ulen) - sizeof(struct udp);
 
   int size = 0;
   if (maxlen < len) {
     size = maxlen;
   } else {
     size = len;
-  }    
+  }
 
   if (copyout(data->proc->pagetable, (uint64)buf, (char *)(packet + 1), size) ==
       -1) {
+    head->packet = 0;
+    kfree(packet);
     release(&data->lock);
     return -1;
   }
@@ -232,6 +234,8 @@ sys_recv(void)
   //*src = head->src_ip;
   if (copyout(data->proc->pagetable, (uint64)src, (char *)(&head->src_ip), sizeof(int)) ==
       -1) {
+    head->packet = 0;
+    kfree(packet);
     release(&data->lock);
     return -1;
   }
@@ -239,10 +243,14 @@ sys_recv(void)
   int sport = head->src_ip;
   if (copyout(data->proc->pagetable, (uint64)src_port, (char *)(&sport), sizeof(int)) ==
       -1) {
+    head->packet = 0;
+    kfree(packet);
     release(&data->lock);
     return -1;
   }
 
+  head->packet = 0;
+  kfree(packet);
   release(&data->lock);
   return size;
 }
@@ -361,12 +369,13 @@ ip_rx(char *buf, int len)
   if (ip->ip_p != IPPROTO_UDP) {
     return;
   }
+  printf("ip_rx: received UDP packet\n");
 
   struct udp *packet = (struct udp *)(ip + 1);
 
   acquire(&netlock);
 
-  uint16 port = ntohl(packet->dport);
+  uint16 port = ntohs(packet->dport);
 
   struct bind_data *socket = find_from_port(port);
   if (socket == 0) {
@@ -390,10 +399,17 @@ ip_rx(char *buf, int len)
 
   socket->packet_queue_len++;
 
-  struct packet_queue* node = &socket->queue[socket->tail];
+  struct packet_queue *node = &socket->queue[socket->tail];
+
+  char *packet_copy = kalloc();
+  if (packet_copy == 0) {
+    panic("ip_rx: out of memory");
+  }
+
+  memmove(packet_copy, packet, packet->ulen);
   
   node->src_ip = ntohl(ip->ip_src);
-  node->packet = (char *)packet;
+  node->packet = (char *)packet_copy;
   node->len = packet->ulen;
 
   socket->tail = (socket->tail + 1) % UDP_SOCKETS_SIZE;
