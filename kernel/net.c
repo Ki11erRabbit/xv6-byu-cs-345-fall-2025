@@ -22,10 +22,9 @@ static struct spinlock netlock;
 #define UDP_SOCKETS_SIZE 16
 
 struct packet_queue {
+  int src_ip;
   char *packet;
   int len;
-  struct packet_queue *next;
-  struct packet_queue *prev;
 };
 
 struct bind_data {
@@ -34,8 +33,9 @@ struct bind_data {
   struct spinlock lock;
   int socket;
   int packet_queue_len;
-  struct packet_queue *head;
-  struct packet_queue *tail;
+  int head;
+  int tail;
+  struct packet_queue queue[UDP_SOCKETS_SIZE];
 } udp_sockets[UDP_SOCKETS_SIZE] = { 0 };
 
 
@@ -47,8 +47,31 @@ netinit(void)
        ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
     initlock(&ptr->lock, "socketlock");
     ptr->socket = udp_sockets - ptr;
+    ptr->head = 0;
+    ptr->tail = 1;
+    ptr->port = 0;
+    ptr->packet_queue_len = 0;
   }
 }
+
+struct bind_data *find_from_port(uint16 port) {
+
+  if (port == 0) {
+    return 0;
+  }    
+
+  for (struct bind_data *ptr = udp_sockets;
+       ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
+    acquire(&ptr->lock);
+    if (ptr->port == port) {
+      release(&ptr->lock);
+      return ptr;
+    }
+    release(&ptr->lock);
+  }
+  return 0;
+}  
+
 
 struct bind_data *alloc_socket(int port) {
   acquire(&netlock);
@@ -77,11 +100,11 @@ struct bind_data *alloc_socket(int port) {
   return ptr;
 }
 
-struct bind_data *get_socket(int socket) {
-  if (socket < 0 || socket >= UDP_SOCKETS_SIZE) {
-    return 0;
-  }
-  return &udp_sockets[socket];
+struct bind_data *get_socket(int port) {
+  acquire(&netlock);
+  struct bind_data *data = find_from_port(port);
+  release(&netlock);
+  return data;
 }  
 
 void free_socket(struct bind_data* data) {
@@ -93,19 +116,6 @@ void free_socket(struct bind_data* data) {
   release(&data->lock);
 }
 
-struct bind_data *find_from_port(uint16 port) {
-
-  for (struct bind_data *ptr = udp_sockets;
-       ptr < udp_sockets + UDP_SOCKETS_SIZE; ptr++) {
-    acquire(&ptr->lock);
-    if (ptr->port == port) {
-      release(&ptr->lock);
-      return ptr;
-    }
-    release(&ptr->lock);
-  }
-  return 0;
-}  
 
 //
 // bind(int port)
@@ -120,7 +130,6 @@ sys_bind(void)
   //
   int port;
   argint(0, &port);
-  port = ntohl(port);
 
   struct bind_data * socket_data = alloc_socket(port);
   if (socket_data == 0) {
@@ -166,17 +175,17 @@ sys_recv(void)
   //
   // Your code here.
   //
-/*  
+  
   int dport;
   int *src;
   short *src_port;
   char *buf;
   int maxlen;
   argint(0, &dport);
-  argint(1, &src);
-  argint(2, &src_port);
-  argint(3, &buf);
-  argint(4, &maxlen);
+  argaddr(1, (uint64*)&src);
+  argaddr(2, (uint64*)&src_port);
+  argaddr(3, (uint64*)&buf);
+  argaddr(4, (uint64*)&maxlen);
 
   struct bind_data *data = get_socket(dport);
 
@@ -184,11 +193,58 @@ sys_recv(void)
     return -1;
 
   acquire(&data->lock);
-  *src_port = data->port;
-  
 
-  release(&data->lock);*/
-  return -1;
+  if (myproc() != data->proc) {
+    release(&data->lock);
+    return -1;
+  }
+
+  if (data->packet_queue_len == 0) {
+    sleep(data->proc, &data->lock);
+  }
+  /*
+  int dport;
+  int *src;
+  short *src_port;
+  char *buf;
+  int maxlen;
+   */
+
+  data->packet_queue_len--;
+  struct packet_queue *head = &data->queue[data->head];
+  struct udp *packet = (struct udp *)head->packet;
+  data->head = (data->head - 1) % UDP_SOCKETS_SIZE;
+  int len = ntohl(packet->ulen);
+
+  int size = 0;
+  if (maxlen < len) {
+    size = maxlen;
+  } else {
+    size = len;
+  }    
+
+  if (copyout(data->proc->pagetable, (uint64)buf, (char *)(packet + 1), size) ==
+      -1) {
+    release(&data->lock);
+    return -1;
+  }
+
+  //*src = head->src_ip;
+  if (copyout(data->proc->pagetable, (uint64)src, (char *)(&head->src_ip), sizeof(int)) ==
+      -1) {
+    release(&data->lock);
+    return -1;
+  }
+  //*src_port = ntohl(packet->sport);
+  int sport = head->src_ip;
+  if (copyout(data->proc->pagetable, (uint64)src_port, (char *)(&sport), sizeof(int)) ==
+      -1) {
+    release(&data->lock);
+    return -1;
+  }
+
+  release(&data->lock);
+  return size;
 }
 
 // This code is lifted from FreeBSD's ping.c, and is copyright by the Regents
@@ -325,27 +381,22 @@ ip_rx(char *buf, int len)
     return;
   }    
 
-  char *buf_copy = kalloc();
+  /*char *buf_copy = kalloc();
 
   if (buf_copy == 0) {
     panic("out of memory");
-  }
-  struct packet_queue *node = kalloc();
-
-  if (node == 0) {
-    panic("out of memory");
-  }
-
-  memmove((void *)buf_copy, (void *)packet, packet->ulen);
+    }*/
+  //memmove((void *)buf_copy, (void *)packet, packet->ulen);
 
   socket->packet_queue_len++;
-  node->packet = buf_copy;
+
+  struct packet_queue* node = &socket->queue[socket->tail];
+  
+  node->src_ip = ntohl(ip->ip_src);
+  node->packet = (char *)packet;
   node->len = packet->ulen;
 
-  node->prev = socket->tail;
-  socket->tail->next = node;
-  node->next = 0;
-  socket->tail = node;
+  socket->tail = (socket->tail + 1) % UDP_SOCKETS_SIZE;
 
   release(&socket->lock);
 
