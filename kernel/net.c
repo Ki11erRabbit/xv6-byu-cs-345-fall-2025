@@ -213,7 +213,7 @@ sys_recv(void)
   data->packet_queue_len--;
   struct packet_queue *head = &data->queue[data->head];
   struct udp *packet = (struct udp *)head->packet;
-  data->head = (data->head - 1) % UDP_SOCKETS_SIZE;
+  data->head = (data->head + 1) % UDP_SOCKETS_SIZE;
   int len = ntohl(packet->ulen) - sizeof(struct udp);
 
   int size = 0;
@@ -232,7 +232,9 @@ sys_recv(void)
   }
 
   //*src = head->src_ip;
-  if (copyout(data->proc->pagetable, (uint64)src, (char *)(&head->src_ip), sizeof(int)) ==
+  printf("ip: %x\n", head->src_ip);
+  int src_ip = head->src_ip;
+  if (copyout(data->proc->pagetable, (uint64)src, (char *)(&src_ip), sizeof(int)) ==
       -1) {
     head->packet = 0;
     kfree(packet);
@@ -240,7 +242,7 @@ sys_recv(void)
     return -1;
   }
   //*src_port = ntohl(packet->sport);
-  int sport = head->src_ip;
+  int sport = ntohs(packet->sport);
   if (copyout(data->proc->pagetable, (uint64)src_port, (char *)(&sport), sizeof(int)) ==
       -1) {
     head->packet = 0;
@@ -409,6 +411,7 @@ ip_rx(char *buf, int len)
   memmove(packet_copy, packet, packet->ulen);
   
   node->src_ip = ntohl(ip->ip_src);
+  printf("ip: %x\n", ip->ip_src);
   node->packet = (char *)packet_copy;
   node->len = packet->ulen;
 
