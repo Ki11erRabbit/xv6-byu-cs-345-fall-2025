@@ -32,7 +32,6 @@ struct bind_data {
   struct proc *proc;
   struct spinlock lock;
   int socket;
-  int packet_queue_len;
   int head;
   int tail;
   struct packet_queue queue[UDP_SOCKETS_SIZE];
@@ -50,7 +49,6 @@ netinit(void)
     ptr->head = 0;
     ptr->tail = 1;
     ptr->port = 0;
-    ptr->packet_queue_len = 0;
   }
 }
 
@@ -186,6 +184,7 @@ sys_recv(void)
   argaddr(2, (uint64*)&src_port);
   argaddr(3, (uint64*)&buf);
   argint(4, &maxlen);
+  printf("maxlen: %d\n", maxlen);
 
   struct bind_data *data = get_socket(dport);
 
@@ -199,7 +198,7 @@ sys_recv(void)
     return -1;
   }
 
-  if (data->packet_queue_len == 0) {
+  if (data->tail - data->head <= 0) {
     sleep(data->proc, &data->lock);
   }
   /*
@@ -210,11 +209,10 @@ sys_recv(void)
   int maxlen;
    */
 
-  data->packet_queue_len--;
   struct packet_queue *head = &data->queue[data->head];
   struct udp *packet = (struct udp *)head->packet;
   data->head = (data->head + 1) % UDP_SOCKETS_SIZE;
-  int len = ntohl(packet->ulen) - sizeof(struct udp);
+  int len = ntohs(packet->ulen) - sizeof(struct udp);
 
   int size = 0;
   if (maxlen < len) {
@@ -232,7 +230,6 @@ sys_recv(void)
   }
 
   //*src = head->src_ip;
-  printf("ip: %x\n", head->src_ip);
   int src_ip = head->src_ip;
   if (copyout(data->proc->pagetable, (uint64)src, (char *)(&src_ip), sizeof(int)) ==
       -1) {
@@ -243,7 +240,7 @@ sys_recv(void)
   }
   //*src_port = ntohl(packet->sport);
   int sport = ntohs(packet->sport);
-  if (copyout(data->proc->pagetable, (uint64)src_port, (char *)(&sport), sizeof(int)) ==
+  if (copyout(data->proc->pagetable, (uint64)src_port, (char *)(&sport), sizeof(short)) ==
       -1) {
     head->packet = 0;
     kfree(packet);
@@ -387,7 +384,7 @@ ip_rx(char *buf, int len)
 
   acquire(&socket->lock);
 
-  if (socket->packet_queue_len == UDP_SOCKETS_SIZE) {
+  if (socket->tail - socket->head == UDP_SOCKETS_SIZE) {
     release(&netlock);
     return;
   }    
@@ -399,8 +396,6 @@ ip_rx(char *buf, int len)
     }*/
   //memmove((void *)buf_copy, (void *)packet, packet->ulen);
 
-  socket->packet_queue_len++;
-
   struct packet_queue *node = &socket->queue[socket->tail];
 
   char *packet_copy = kalloc();
@@ -411,7 +406,6 @@ ip_rx(char *buf, int len)
   memmove(packet_copy, packet, packet->ulen);
   
   node->src_ip = ntohl(ip->ip_src);
-  printf("ip: %x\n", ip->ip_src);
   node->packet = (char *)packet_copy;
   node->len = packet->ulen;
 
