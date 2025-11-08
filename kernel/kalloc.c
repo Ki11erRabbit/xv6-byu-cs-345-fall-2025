@@ -92,7 +92,9 @@ void
 kfree(void *pa)
 {
   struct run *r;
+  push_off();
   int cpu_id = cpuid();
+  pop_off();
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -117,7 +119,9 @@ void *
 kalloc(void)
 {
   struct run *r;
+  push_off();
   int cpu_id = cpuid();
+  pop_off();
 
   //printf("accquired lock in %d\n", cpu_id);
   acquire(&kmem.locks[cpu_id]);
