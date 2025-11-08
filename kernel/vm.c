@@ -21,7 +21,9 @@ kvmmake(void)
 {
   pagetable_t kpgtbl;
 
+  printf("allocating\n");
   kpgtbl = (pagetable_t) kalloc();
+  printf("allocated\n");
   memset(kpgtbl, 0, PGSIZE);
 
   // uart registers
