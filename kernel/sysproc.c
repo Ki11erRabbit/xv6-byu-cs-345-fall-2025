@@ -91,3 +91,12 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Returns a pointer
+uint64 sys_mmap(void) {
+  return 0;
+}
+
+int sys_munmap(void) {
+  return -1;
+}  
