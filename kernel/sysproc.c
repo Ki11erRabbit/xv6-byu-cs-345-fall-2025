@@ -94,9 +94,29 @@ sys_uptime(void)
 
 // Returns a pointer
 uint64 sys_mmap(void) {
+  uint64 *addr;
+  uint64 len;
+  int prot;
+  int flags;
+  int fd;
+  int offset = 0;
+
+  argaddr(1, (uint64 *)&addr);
+  argaddr(2, &len);
+  argint(3, &prot);
+  argint(4, &flags);
+  argint(5, &fd);
+
+  (void)offset;
+  
   return 0;
 }
 
 int sys_munmap(void) {
+  uint64 *addr;
+  uint64 len;
+
+  argaddr(1, (uint64 *)&addr);
+  argaddr(2, &len);
   return -1;
 }  
