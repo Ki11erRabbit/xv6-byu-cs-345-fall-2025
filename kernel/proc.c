@@ -3,8 +3,11 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "file.h"
 
 struct cpu cpus[NCPU];
 
@@ -696,12 +699,24 @@ procdump(void)
 
 
 uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
+  struct proc *p = myproc();
+  struct file *file = p->ofile[fd];
+  pte_t *pte;
 
+  if (addr == 0) {
+    pte = walk(p->pagetable, (uint64)addr, 1);
+  } else {
+    pte = walk(p->pagetable, (uint64)addr, 1);
+  }
+
+  (void)pte;
+  (void)file;
+  
   return 0;
 }
 
 
 int proc_munmap(void *addr, uint64 len) {
 
-  return -1
+  return -1;
 }  
