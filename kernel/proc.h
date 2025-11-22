@@ -79,12 +79,15 @@ struct trapframe {
   /* 280 */ uint64 t6;
 };
 
-
 struct vma_item {
-  void *address;
-  int length;
-  uint permissions;
+  uint64 address;
+  uint64 start;
+  uint64 end;
+  uint64 length;
+  uint64 offset;
   struct file *file;
+  uint permissions;
+  uint pages;
 };  
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
@@ -112,6 +115,7 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 vma_next_va;
   struct vma_item vma_list[MAXVMA];
-  int vma_next;
+  uint vma_next;
 };

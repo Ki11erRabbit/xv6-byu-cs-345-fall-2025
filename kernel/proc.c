@@ -8,6 +8,7 @@
 #include "defs.h"
 #include "fs.h"
 #include "file.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -57,7 +58,7 @@ procinit(void)
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
       p->state = UNUSED;
-      p->kstack = KSTACK((int) (p - proc));
+      p->kstack = KSTACK((int)(p - proc));
   }
 }
 
@@ -148,6 +149,9 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  // Set up where the next virtual address will be located for a vma
+  p->vma_next_va = TRAPFRAME - PGSIZE;
 
   return p;
 }
@@ -700,19 +704,53 @@ procdump(void)
 
 uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   struct proc *p = myproc();
-  struct file *file = p->ofile[fd];
-  pte_t *pte;
 
-  if (addr == 0) {
-    pte = walk(p->pagetable, (uint64)addr, 1);
-  } else {
-    pte = walk(p->pagetable, (uint64)addr, 1);
+  if (!addr) {
+    return 0;
   }
 
-  (void)pte;
-  (void)file;
+  int pages = len / PGSIZE;
+  pages = pages == 0 ? 1 : pages;
+  // If len is not page divisible, then provide one more page
+  if (len % PGSIZE != 0) {
+    pages += 1;
+  }
+
+  struct vma_item *vma = &p->vma_list[p->vma_next];
+  p->vma_next++;
+
+  uint64 size = (pages * PGSIZE);
+  uint64 start = p->vma_next_va - size;
+  uint64 end = p->vma_next_va;
+
+  p->vma_next_va -= size;
   
-  return 0;
+  vma->address = start;
+  vma->length = len;
+  vma->start = start;
+  vma->end = end;
+  vma->offset = 0;
+  vma->pages = pages;
+
+  vma->file = filedup(p->ofile[fd]);
+
+  int page_perms = PTE_U | PTE_V;
+
+  if ((flags & PROT_READ) == PROT_READ) {
+    page_perms |= PTE_R;
+  }    
+  if ((flags & PROT_WRITE) == PROT_WRITE) {
+    page_perms |= PTE_W;
+  }
+  uint64 out = start;
+  for (int i = 0; i < pages; i++) {
+    uint64 page = (uint64)kalloc();
+    mappages(p->pagetable, start, PGSIZE, page, page_perms);
+    start += PGSIZE;
+  }    
+  
+  
+  return out;
 }
 
 
