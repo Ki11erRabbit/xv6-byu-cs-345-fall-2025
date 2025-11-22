@@ -716,6 +716,10 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
     pages += 1;
   }
 
+  if (p->vma_next == MAXVMA) {
+    return 0;
+  }    
+  
   struct vma_item *vma = &p->vma_list[p->vma_next];
   p->vma_next++;
 
@@ -744,8 +748,10 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   }
   uint64 out = start;
   for (int i = 0; i < pages; i++) {
-    uint64 page = (uint64)kalloc();
-    mappages(p->pagetable, start, PGSIZE, page, page_perms);
+    pte_t *pte = walk(p->pagetable, start, 1);
+    *pte |= PTE_D;
+    //uint64 page = (uint64)kalloc();
+    //mappages(p->pagetable, start, PGSIZE, page, page_perms);
     start += PGSIZE;
   }    
   
