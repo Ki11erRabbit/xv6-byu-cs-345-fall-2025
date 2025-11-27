@@ -49,8 +49,12 @@ usertrap(void)
   
   // save user program counter.
   p->trapframe->epc = r_sepc();
-  
-  if(r_scause() == 8){
+
+  if (r_scause() == 5 || r_scause() == 13) {
+    pagefault(p, r_stval(), 0);
+  } else if (r_scause() == 7 || r_scause() == 15) {
+    pagefault(p, r_stval(), 1);
+  } else if(r_scause() == 8){
     // system call
 
     if(killed(p))

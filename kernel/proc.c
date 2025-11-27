@@ -747,9 +747,14 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
     page_perms |= PTE_W;
   }
   uint64 out = start;
+  printf("start: %ld\n", start);
   for (int i = 0; i < pages; i++) {
-    pte_t *pte = walk(p->pagetable, start, 1);
-    *pte |= PTE_D;
+
+    if (mappages(p->pagetable, start, PGSIZE, 0, page_perms | PTE_D) != 0) {
+      return 0;
+    }      
+    //pte_t *pte = walk(p->pagetable, start, 1);
+    //*pte |= PTE_D;
     //uint64 page = (uint64)kalloc();
     //mappages(p->pagetable, start, PGSIZE, page, page_perms);
     start += PGSIZE;
@@ -760,7 +765,63 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
 }
 
 
-int proc_munmap(void *addr, uint64 len) {
+int proc_munmap(void *addr, uint64 len) { return -1; }
 
-  return -1;
+int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
+   if (virt_address >= MAXVA) {
+     return -1;
+   }
+
+   struct vma_item *vma = 0;
+
+   for (int i = 0; i < p->vma_next_va; i++) {
+     if (!(virt_address >= p->vma_list[i].start &&
+          virt_address < p->vma_list[i].end)) {
+       continue;
+     }
+     vma = &p->vma_list[i];
+     break;
+   }
+   if (vma == 0) {
+     return -1;
+   }
+
+
+   uint64 offset = 0;
+   ilock(vma->file->ip);
+   for (int i = 0; i < vma->pages; i++) {
+     uint64 start = vma->start + (i * PGSIZE);
+     pte_t *pte = walk(p->pagetable, start, 0);
+
+     *pte ^= PTE_D;
+     uint64 flags = PTE_FLAGS(*pte);
+     char *mem = 0;
+     if ((mem = kalloc()) == 0) {
+       iunlock(vma->file->ip);
+       return -1;
+     }
+     printf("start: %ld\n", start);
+     printf("iteration: %d\n", i);
+     uvmunmap(p->pagetable, start, 1, 0);
+     if (mappages(p->pagetable, start, PGSIZE, (uint64)mem,
+                  flags) != 0) {
+       kfree(mem);
+       iunlock(vma->file->ip);
+       return -1;
+     }
+
+     if (pte == 0) {
+       iunlock(vma->file->ip);
+       return -1;
+     }
+     int amount = readi(vma->file->ip, 1, start, offset, PGSIZE);
+
+     if (amount < 0) {
+       iunlock(vma->file->ip);
+       return -1;
+     }       
+   }     
+   iunlock(vma->file->ip);
+
+   return 0;
 }  

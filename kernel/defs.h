@@ -112,6 +112,7 @@ int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 uint64          proc_mmap(void*, uint64, int, int, int);
 int             proc_munmap(void*, uint64);
+int pagefault(struct proc*, uint64, int);
 
 
 // swtch.S
