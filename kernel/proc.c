@@ -706,7 +706,7 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   struct proc *p = myproc();
 
   if (!addr) {
-    return 0;
+    return -1;
   }
 
   int pages = len / PGSIZE;
@@ -717,7 +717,7 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   }
 
   if (p->vma_next == MAXVMA) {
-    return 0;
+    return -1;
   }    
   
   struct vma_item *vma = &p->vma_list[p->vma_next];
@@ -751,7 +751,7 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   for (int i = 0; i < pages; i++) {
 
     if (mappages(p->pagetable, start, PGSIZE, 0, page_perms | PTE_D) != 0) {
-      return 0;
+      return -1;
     }      
     //pte_t *pte = walk(p->pagetable, start, 1);
     //*pte |= PTE_D;
@@ -815,6 +815,8 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
        return -1;
      }
      int amount = readi(vma->file->ip, 1, start, offset, PGSIZE);
+     printf("amount read: %d offset: %ld\n", amount, offset);
+     offset += amount;
 
      if (amount < 0) {
        iunlock(vma->file->ip);
