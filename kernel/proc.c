@@ -704,29 +704,23 @@ procdump(void)
 
 uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   struct proc *p = myproc();
-
   if (!addr) {
     return -1;
   }
-
   int pages = len / PGSIZE;
   pages = pages == 0 ? 1 : pages;
-  // If len is not page divisible, then provide one more page
   if (len % PGSIZE != 0) {
     pages += 1;
   }
-
   if (p->vma_next == MAXVMA) {
     return -1;
   }    
   
   struct vma_item *vma = &p->vma_list[p->vma_next];
   p->vma_next++;
-
   uint64 size = (pages * PGSIZE);
   uint64 start = p->vma_next_va - size;
   uint64 end = p->vma_next_va;
-
   p->vma_next_va -= size;
   
   vma->address = start;
@@ -735,33 +729,19 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   vma->end = end;
   vma->offset = 0;
   vma->pages = pages;
-
   vma->file = filedup(p->ofile[fd]);
-
-  int page_perms = PTE_U | PTE_V;
-
-  if ((flags & PROT_READ) == PROT_READ) {
-    page_perms |= PTE_R;
+  
+  vma->permissions = PTE_U;
+  if ((prot & PROT_READ) == PROT_READ) {
+    vma->permissions |= PTE_R;
   }    
-  if ((flags & PROT_WRITE) == PROT_WRITE) {
-    page_perms |= PTE_W;
+  if ((prot & PROT_WRITE) == PROT_WRITE) {
+    vma->permissions |= PTE_W;
   }
-  uint64 out = start;
-  printf("start: %ld\n", start);
-  for (int i = 0; i < pages; i++) {
-
-    if (mappages(p->pagetable, start, PGSIZE, 0, page_perms | PTE_D) != 0) {
-      return -1;
-    }      
-    //pte_t *pte = walk(p->pagetable, start, 1);
-    //*pte |= PTE_D;
-    //uint64 page = (uint64)kalloc();
-    //mappages(p->pagetable, start, PGSIZE, page, page_perms);
-    start += PGSIZE;
-  }    
   
+  printf("mmap: start: %ld, end: %ld, pages: %d\n", start, end, pages);
   
-  return out;
+  return start;
 }
 
 
@@ -771,59 +751,60 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
    if (virt_address >= MAXVA) {
      return -1;
    }
-
+   
    struct vma_item *vma = 0;
-
-   for (int i = 0; i < p->vma_next_va; i++) {
-     if (!(virt_address >= p->vma_list[i].start &&
-          virt_address < p->vma_list[i].end)) {
-       continue;
+   for (int i = 0; i < p->vma_next; i++) {
+     if (virt_address >= p->vma_list[i].start &&
+         virt_address < p->vma_list[i].end) {
+       vma = &p->vma_list[i];
+       break;
      }
-     vma = &p->vma_list[i];
-     break;
    }
+   
    if (vma == 0) {
+     printf("pagefault: address %ld not in any VMA\n", virt_address);
      return -1;
    }
-
-
-   uint64 offset = 0;
+   
+   uint64 page_start = PGROUNDDOWN(virt_address);
+   
+   pte_t *pte = walk(p->pagetable, page_start, 0);
+   if (pte != 0 && (*pte & PTE_V)) {
+     printf("pagefault: page %ld already mapped\n", page_start);
+     return 0;
+   }
+   
+   uint64 offset = vma->offset + (page_start - vma->start);
+   
+   char *mem = kalloc();
+   if (mem == 0) {
+     printf("pagefault: kalloc failed\n");
+     return -1;
+   }
+   memset(mem, 0, PGSIZE);
+   
+   printf("pagefault: file ref=%d, type=%d\n", vma->file->ref, vma->file->type);
    ilock(vma->file->ip);
-   for (int i = 0; i < vma->pages; i++) {
-     uint64 start = vma->start + (i * PGSIZE);
-     pte_t *pte = walk(p->pagetable, start, 0);
-
-     *pte ^= PTE_D;
-     uint64 flags = PTE_FLAGS(*pte);
-     char *mem = 0;
-     if ((mem = kalloc()) == 0) {
-       iunlock(vma->file->ip);
-       return -1;
-     }
-     printf("start: %ld\n", start);
-     printf("iteration: %d\n", i);
-     uvmunmap(p->pagetable, start, 1, 0);
-     if (mappages(p->pagetable, start, PGSIZE, (uint64)mem,
-                  flags) != 0) {
-       kfree(mem);
-       iunlock(vma->file->ip);
-       return -1;
-     }
-
-     if (pte == 0) {
-       iunlock(vma->file->ip);
-       return -1;
-     }
-     int amount = readi(vma->file->ip, 1, start, offset, PGSIZE);
-     printf("amount read: %d offset: %ld\n", amount, offset);
-     offset += amount;
-
-     if (amount < 0) {
-       iunlock(vma->file->ip);
-       return -1;
-     }       
-   }     
+   printf("pagefault: inode size=%d, offset=%ld\n", vma->file->ip->size, offset);
+   int amount = readi(vma->file->ip, 0, (uint64)mem, offset, PGSIZE);
    iunlock(vma->file->ip);
-
+   
+   printf("pagefault: page_start=%ld, offset=%ld, amount_read=%d\n", 
+          page_start, offset, amount);
+   
+   if (amount < 0) {
+     kfree(mem);
+     printf("pagefault: readi failed\n");
+     return -1;
+   }
+   
+   if (mappages(p->pagetable, page_start, PGSIZE, (uint64)mem, 
+                vma->permissions | PTE_V) != 0) {
+     kfree(mem);
+     printf("pagefault: mappages failed\n");
+     return -1;
+   }
+   
+   printf("pagefault: successfully mapped page at %ld\n", page_start);
    return 0;
-}  
+}
