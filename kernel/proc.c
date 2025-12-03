@@ -781,6 +781,26 @@ int proc_munmap(void *addr, uint64 len) {
 
   if (vma == 0) {
     return -1;
+  }
+
+  if (vma->file != 0 && vma->shared) {
+    int inode_size;
+    ilock(vma->file->ip);
+    inode_size = vma->file->ip->size;
+    iunlock(vma->file->ip);
+    int size;
+    if (inode_size < len) {
+      size = inode_size;
+    } else {
+      size = len;
+    }      
+
+
+    int offset = vma->address - address;
+   
+
+    printf("writing back to file with size = %d, offset = %d\n", size, offset);
+    filewrite_off(vma->file, vma->start, size, offset);
   }    
 
   if (vma->start == address) {
@@ -807,7 +827,7 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
    }
    
    if (vma == 0) {
-     printf("pagefault: address %ld not in any VMA\n", virt_address);
+     //printf("pagefault: address %ld not in any VMA\n", virt_address);
      return -1;
    }
    
