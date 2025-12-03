@@ -755,7 +755,33 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
 }
 
 
-int proc_munmap(void *addr, uint64 len) { return -1; }
+int proc_munmap(void *addr, uint64 len) {
+  struct proc *p = myproc();
+  struct vma_item *vma = 0;
+  uint64 address = (uint64)addr;
+
+  for (int i = 0; i < p->vma_next_va; i++) {
+    if (address >= p->vma_list[i].start &&
+        (address + len) < p->vma_list[i].end) {
+      vma = &p->vma_list[i];
+      break;
+    }
+  }
+
+  if (vma == 0) {
+    printf("vma was not found\n");
+    return -1;
+  }    
+
+  //vma->start = address + len;
+  if (vma->start == address) {
+    vma->start = address + len;
+  } else {
+    vma->end = address;
+  }    
+
+  return 0;
+}
 
 int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
    if (virt_address >= MAXVA) {
