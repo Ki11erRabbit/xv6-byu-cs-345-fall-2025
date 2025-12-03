@@ -87,6 +87,7 @@ struct vma_item {
   uint64 offset;
   struct file *file;
   uint permissions;
+  uint shared;
   uint pages;
 };  
 

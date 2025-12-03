@@ -753,6 +753,12 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   if ((prot & PROT_WRITE) == PROT_WRITE) {
     vma->permissions |= PTE_W;
   }
+
+  if ((flags & MAP_SHARED) == MAP_SHARED) {
+    vma->shared = 1;
+  } else {
+    vma->shared = 0;
+  }    
   
   printf("mmap: start: %ld, end: %ld, pages: %d\n", start, end, pages);
   
