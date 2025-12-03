@@ -101,11 +101,11 @@ uint64 sys_mmap(void) {
   int fd;
   //int offset = 0;
 
-  argaddr(1, (uint64 *)&addr);
-  argaddr(2, &len);
-  argint(3, &prot);
-  argint(4, &flags);
-  argint(5, &fd);
+  argaddr(0, (uint64 *)&addr);
+  argaddr(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
 
   return proc_mmap(addr, len, prot, flags, fd);
 }
@@ -114,7 +114,7 @@ int sys_munmap(void) {
   uint64 *addr;
   uint64 len;
 
-  argaddr(1, (uint64 *)&addr);
-  argaddr(2, &len);
+  argaddr(0, (uint64 *)&addr);
+  argaddr(1, &len);
   return proc_munmap(addr, len);
 }  

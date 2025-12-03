@@ -704,7 +704,7 @@ procdump(void)
 
 uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   struct proc *p = myproc();
-  if (!addr) {
+  if (!!addr) {
     return -1;
   }
   int pages = len / PGSIZE;
@@ -722,7 +722,17 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   uint64 start = p->vma_next_va - size;
   uint64 end = p->vma_next_va;
   p->vma_next_va -= size;
+
+  ilock(p->ofile[fd]->ip);
+  uint file_size = p->ofile[fd]->ip->size;
+  iunlock(p->ofile[fd]->ip);
   
+  printf("mmap: fd=%d, file_size=%d, requested_len=%ld\n", fd, file_size, len);
+  
+  if (file_size == 0) {
+    printf("mmap: WARNING - file size is 0!\n");
+  }
+
   vma->address = start;
   vma->length = len;
   vma->start = start;
@@ -782,12 +792,15 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
      return -1;
    }
    memset(mem, 0, PGSIZE);
-   
+
    printf("pagefault: file ref=%d, type=%d\n", vma->file->ref, vma->file->type);
+   begin_op();
    ilock(vma->file->ip);
+   iupdate(vma->file->ip);
    printf("pagefault: inode size=%d, offset=%ld\n", vma->file->ip->size, offset);
    int amount = readi(vma->file->ip, 0, (uint64)mem, offset, PGSIZE);
    iunlock(vma->file->ip);
+   end_op();
    
    printf("pagefault: page_start=%ld, offset=%ld, amount_read=%d\n", 
           page_start, offset, amount);
