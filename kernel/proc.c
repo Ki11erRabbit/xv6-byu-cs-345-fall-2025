@@ -714,6 +714,11 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
   }
   if (p->vma_next == MAXVMA) {
     return -1;
+  }
+
+  if ((prot & PROT_WRITE) == PROT_WRITE && !p->ofile[fd]->writable &&
+      (flags & MAP_PRIVATE) == 0) {
+    return -1;
   }    
   
   struct vma_item *vma = &p->vma_list[p->vma_next];
@@ -769,11 +774,9 @@ int proc_munmap(void *addr, uint64 len) {
   }
 
   if (vma == 0) {
-    printf("vma was not found\n");
     return -1;
   }    
 
-  //vma->start = address + len;
   if (vma->start == address) {
     vma->start = address + len;
   } else {
