@@ -780,7 +780,7 @@ int proc_munmap(uint64 address, uint64 len) {
 
   for (int i = 0; i < p->vma_next; i++) {
     if (address >= p->vma_list[i].start &&
-        (address + len) < p->vma_list[i].end) {
+        (address + len) <= p->vma_list[i].end) {
       vma = &p->vma_list[i];
       break;
     }
