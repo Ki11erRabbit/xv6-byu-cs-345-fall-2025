@@ -315,6 +315,14 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // Copy mmaped files
+  for (i = 0; i < p->vma_next; i++) {
+    np->vma_list[i] = p->vma_list[i];
+    np->vma_list[i].file = filedup(np->vma_list[i].file);
+  }
+  np->vma_next = i;
+  np->vma_next_va = p->vma_next_va;
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;
@@ -766,10 +774,9 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
 }
 
 
-int proc_munmap(void *addr, uint64 len) {
+int proc_munmap(uint64 address, uint64 len) {
   struct proc *p = myproc();
   struct vma_item *vma = 0;
-  uint64 address = (uint64)addr;
 
   for (int i = 0; i < p->vma_next_va; i++) {
     if (address >= p->vma_list[i].start &&

@@ -116,5 +116,5 @@ int sys_munmap(void) {
 
   argaddr(0, (uint64 *)&addr);
   argaddr(1, &len);
-  return proc_munmap(addr, len);
+  return proc_munmap((uint64)addr, len);
 }  
