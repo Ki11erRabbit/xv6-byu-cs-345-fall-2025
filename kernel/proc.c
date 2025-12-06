@@ -777,7 +777,7 @@ uint64 proc_mmap(void *addr, uint64 len, int prot, int flags, int fd) {
 int proc_munmap(uint64 address, uint64 len) {
   struct proc *p = myproc();
   struct vma_item *vma = 0;
-
+  
   for (int i = 0; i < p->vma_next; i++) {
     if (address >= p->vma_list[i].start &&
         (address + len) <= p->vma_list[i].end) {
@@ -785,37 +785,69 @@ int proc_munmap(uint64 address, uint64 len) {
       break;
     }
   }
-
+  
   if (vma == 0) {
+    printf("munmap: no VMA found for address %p\n", (void*)address);
     return -1;
   }
-
+  
+  
   if (vma->file != 0 && vma->shared) {
-    int inode_size;
-    ilock(vma->file->ip);
-    inode_size = vma->file->ip->size;
-    iunlock(vma->file->ip);
-    int size;
-    if (inode_size < len) {
-      size = inode_size;
-    } else {
-      size = len;
-    }      
-
-
-    int offset = vma->address - address;
-   
-
-    printf("writing back to file with size = %d, offset = %d\n", size, offset);
-    filewrite_off(vma->file, vma->start, size, offset);
-  }    
-
-  if (vma->start == address) {
+    for (uint64 addr = PGROUNDDOWN(address); 
+         addr < PGROUNDUP(address + len); 
+         addr += PGSIZE) {
+      
+      pte_t *pte = walk(p->pagetable, addr, 0);
+      if (pte == 0 || (*pte & PTE_V) == 0) {
+        continue;
+      }
+      
+      int page_offset = addr - vma->address;
+      
+      ilock(vma->file->ip);
+      int inode_size = vma->file->ip->size;
+      iunlock(vma->file->ip);
+      
+      // Skip if this page is beyond the file
+      if (page_offset >= inode_size) {
+        continue;
+      }
+      
+      int write_size = PGSIZE;
+      if (page_offset + write_size > inode_size) {
+        write_size = inode_size - page_offset;
+      }
+      
+      filewrite_off(vma->file, addr, write_size, page_offset);
+    }
+  }
+  
+  int vma_removed = 0;
+  
+  if (vma->start == address && vma->end == address + len) {
+    // Unmapping entire VMA
+    if (vma->file) {
+      fileclose(vma->file);
+    }
+    // Mark VMA as unused or remove it from the list
+    int vma_index = vma - p->vma_list;
+    for (int i = vma_index; i < p->vma_next - 1; i++) {
+      p->vma_list[i] = p->vma_list[i + 1];
+    }
+    p->vma_next--;
+    vma_removed = 1;
+  } else if (vma->start == address) {
+    // Unmapping from the beginning
     vma->start = address + len;
-  } else {
+  } else if (vma->end == address + len) {
+    // Unmapping from the end
     vma->end = address;
   }
-
+  
+  if (vma_removed) {
+    return 0;
+  }
+  
   for (uint64 addr = vma->address; addr < vma->address + vma->pages * PGSIZE;
        addr += PGSIZE) {
     pte_t *pte = walk(p->pagetable, addr, 0);
@@ -826,11 +858,13 @@ int proc_munmap(uint64 address, uint64 len) {
     uint64 page_start = addr;
     uint64 page_end = addr + PGSIZE;
     
-    if (page_end <= vma->start || page_start >= vma->end) {
+    int overlaps = !(page_end <= vma->start || page_start >= vma->end);
+    
+    if (!overlaps) {
       uvmunmap(p->pagetable, addr, 1, 1);
     }
   }
-
+  
   return 0;
 }
 
@@ -858,10 +892,10 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
    pte_t *pte = walk(p->pagetable, page_start, 0);
    if (pte != 0 && (*pte & PTE_V)) {
      printf("pagefault: page %ld already mapped\n", page_start);
-     return 0;
+     return -1;
    }
    
-   uint64 offset = vma->offset + (page_start - vma->start);
+   uint64 offset = vma->offset + (page_start - vma->address);
    
    char *mem = kalloc();
    if (mem == 0) {
@@ -869,7 +903,6 @@ int pagefault(struct proc *p, uint64 virt_address, int write_fault) {
      return -1;
    }
    memset(mem, 0, PGSIZE);
-
    printf("pagefault: file ref=%d, type=%d\n", vma->file->ref, vma->file->type);
    begin_op();
    ilock(vma->file->ip);
