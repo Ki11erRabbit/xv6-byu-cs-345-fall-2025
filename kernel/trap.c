@@ -51,9 +51,15 @@ usertrap(void)
   p->trapframe->epc = r_sepc();
 
   if (r_scause() == 5 || r_scause() == 13) {
-    pagefault(p, r_stval(), 0);
+    int res = pagefault(p, r_stval(), 0);
+    if (res == -1) {
+      setkilled(p);
+    }      
   } else if (r_scause() == 7 || r_scause() == 15) {
-    pagefault(p, r_stval(), 1);
+    int res = pagefault(p, r_stval(), 1);
+    if (res == -1) {
+      setkilled(p);
+    }      
   } else if(r_scause() == 8){
     // system call
 

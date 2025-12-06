@@ -814,7 +814,22 @@ int proc_munmap(uint64 address, uint64 len) {
     vma->start = address + len;
   } else {
     vma->end = address;
-  }    
+  }
+
+  for (uint64 addr = vma->address; addr < vma->address + vma->pages * PGSIZE;
+       addr += PGSIZE) {
+    pte_t *pte = walk(p->pagetable, addr, 0);
+    if (pte == 0 || (*pte & PTE_V) == 0) {
+      continue;
+    }
+    
+    uint64 page_start = addr;
+    uint64 page_end = addr + PGSIZE;
+    
+    if (page_end <= vma->start || page_start >= vma->end) {
+      uvmunmap(p->pagetable, addr, 1, 1);
+    }
+  }
 
   return 0;
 }
