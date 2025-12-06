@@ -778,7 +778,7 @@ int proc_munmap(uint64 address, uint64 len) {
   struct proc *p = myproc();
   struct vma_item *vma = 0;
 
-  for (int i = 0; i < p->vma_next_va; i++) {
+  for (int i = 0; i < p->vma_next; i++) {
     if (address >= p->vma_list[i].start &&
         (address + len) < p->vma_list[i].end) {
       vma = &p->vma_list[i];
